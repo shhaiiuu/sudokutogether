@@ -39,7 +39,7 @@ describe("ChatPanel lifecycle", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Room chat" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Match Chat" })).toBeInTheDocument();
     view.rerender(
       <ChatPanel
         open={false}
@@ -50,7 +50,7 @@ describe("ChatPanel lifecycle", () => {
         onSend={onSend}
       />,
     );
-    expect(screen.queryByRole("heading", { name: "Room chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Match Chat" })).not.toBeInTheDocument();
 
     view.rerender(
       <ChatPanel
@@ -67,5 +67,42 @@ describe("ChatPanel lifecycle", () => {
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "A reply" } });
     fireEvent.submit(screen.getByRole("button", { name: "Send" }).closest("form")!);
     expect(onSend).toHaveBeenCalledWith("A reply");
+  });
+
+  it("labels own messages as You and renders animated typing dots", () => {
+    render(
+      <ChatPanel
+        open
+        onClose={vi.fn()}
+        messages={[message]}
+        players={[player]}
+        typing="Player Two"
+        onSend={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("Player Two")).toBeInTheDocument();
+    expect(screen.getByLabelText("typing").children).toHaveLength(3);
+  });
+
+  it("shows failed delivery with a retry action and supports emoji insertion", () => {
+    const onRetry = vi.fn();
+    const failed: ChatMessage = { ...message, id: "temp-1", delivery: "failed" };
+    render(
+      <ChatPanel
+        open
+        onClose={vi.fn()}
+        messages={[failed]}
+        players={[player]}
+        typing={null}
+        onSend={vi.fn()}
+        onRetry={onRetry}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "🙂" }));
+    expect(onRetry).toHaveBeenCalledWith(failed);
+    expect(screen.getByLabelText("Message")).toHaveValue("🙂");
   });
 });

@@ -105,7 +105,7 @@ export function Lobby({
     typeof window !== "undefined" && room ? `${window.location.origin}/?room=${room.code}` : "";
 
   return (
-    <div className="app-backdrop flex min-h-dvh flex-col overflow-hidden">
+    <div className="app-backdrop flex h-dvh flex-col overflow-hidden">
       <header className="grid grid-cols-[auto_1fr_auto] items-center px-3 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
         <button
           onClick={stage === "room" ? leave : onBack}
@@ -122,7 +122,7 @@ export function Lobby({
         <span className="w-11" />
       </header>
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-5 pb-6">
+      <div className="mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         <p className="flex items-start gap-2 rounded-2xl bg-accent px-3 py-2 text-xs text-accent-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0" /> Live rooms use Supabase for membership,
           puzzle state, votes, presence, and chat. Your guest identity is private to this room.

@@ -72,4 +72,14 @@ describe("Erase eligibility", () => {
       ),
     ).toBe(true);
   });
+
+  it("uses authoritative erasability for incorrect online entries", () => {
+    const incorrect = [...grid];
+    incorrect[0] = 4;
+    const erasable = Array(81).fill(false);
+    erasable[0] = true;
+    expect(canEraseCell(0, givens, incorrect, Array(81).fill(0), [], true, erasable)).toBe(true);
+    erasable[0] = false;
+    expect(canEraseCell(0, givens, incorrect, Array(81).fill(0), [], true, erasable)).toBe(false);
+  });
 });

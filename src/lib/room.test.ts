@@ -5,6 +5,7 @@ import {
   PROPOSAL_TIMEOUT_MS,
   resolveProposal,
   missingVotes,
+  mergeChatMessages,
   type Player,
   type Proposal,
 } from "./room";
@@ -119,5 +120,26 @@ describe("move voting", () => {
     expect(result.status).toBe("approved");
     expect(result.isCorrect).toBe(false);
     expect(result.state.grid).toEqual([5]);
+  });
+
+  it("reconciles an optimistic chat message without duplicating the server event", () => {
+    const optimistic = {
+      id: "temp-1",
+      playerId: "a",
+      text: "Hello",
+      at: 10_000,
+      delivery: "sending" as const,
+    };
+    const server = {
+      id: "server-1",
+      playerId: "a",
+      text: "Hello",
+      at: 10_001,
+      delivery: "sent" as const,
+    };
+    expect(mergeChatMessages([optimistic], [server])).toEqual([server]);
+    expect(
+      mergeChatMessages([server], [{ id: "server-1", playerId: "a", text: "Hello", at: 10_001 }]),
+    ).toHaveLength(1);
   });
 });

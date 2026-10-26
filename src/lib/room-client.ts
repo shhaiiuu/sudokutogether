@@ -15,6 +15,7 @@ export type RoomConnection = "online" | "reconnecting" | "offline";
 type SnapshotListener = (snapshot: RoomSnapshot) => void;
 type TypingListener = (name: string | null) => void;
 type ConnectionListener = (status: RoomConnection) => void;
+type MessageListener = (message: ChatMessage) => void;
 
 export class RoomClient {
   readonly configured = supabaseConfigured;
@@ -22,6 +23,7 @@ export class RoomClient {
   private channel: ReturnType<NonNullable<typeof supabase>["channel"]> | null = null;
   private roomId: string | null = null;
   private heartbeat: number | undefined;
+  private snapshotFallback: number | undefined;
   private refreshTimer: number | undefined;
   private snapshotListener: SnapshotListener | null = null;
   private typingListener: TypingListener | null = null;
@@ -86,6 +88,9 @@ export class RoomClient {
   async clearNotes(roomId: string, index: number) {
     return this.command<RoomSnapshot>("clear-notes", { roomId, index });
   }
+  async eraseCell(roomId: string, index: number) {
+    return this.command<RoomSnapshot>("erase", { roomId, index });
+  }
   async sendMessage(roomId: string, text: string) {
     return this.command<RoomSnapshot>("message", { roomId, text: text.slice(0, 300) });
   }
@@ -95,6 +100,7 @@ export class RoomClient {
     onSnapshot: SnapshotListener,
     onTyping?: TypingListener,
     onConnection?: ConnectionListener,
+    onMessage?: MessageListener,
   ) {
     if (!supabase) throw new Error("Supabase is not configured.");
     await this.ensureIdentity();
@@ -132,8 +138,26 @@ export class RoomClient {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages", filter: `room_id=eq.${roomId}` },
+        { event: "*", schema: "public", table: "game_states", filter: `room_id=eq.${roomId}` },
         refresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+          filter: `room_id=eq.${roomId}`,
+        },
+        ({ new: row }) => {
+          onMessage?.({
+            id: String(row["id"]),
+            playerId: String(row["user_id"]),
+            text: String(row["text"]),
+            at: Date.parse(String(row["created_at"])),
+            delivery: "sent",
+          });
+        },
       )
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if (payload.userId !== this.userId) this.typingListener?.(payload.name || null);
@@ -154,8 +178,8 @@ export class RoomClient {
       });
     this.heartbeat = window.setInterval(() => {
       void this.touch(true);
-      void this.refreshSnapshot();
     }, 5000);
+    this.snapshotFallback = window.setInterval(() => void this.refreshSnapshot(), 30000);
   }
 
   broadcastTyping(name: string, typing: boolean) {
@@ -169,8 +193,10 @@ export class RoomClient {
 
   close() {
     if (this.heartbeat !== undefined) window.clearInterval(this.heartbeat);
+    if (this.snapshotFallback !== undefined) window.clearInterval(this.snapshotFallback);
     if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
     this.heartbeat = undefined;
+    this.snapshotFallback = undefined;
     this.refreshTimer = undefined;
     if (this.roomId && supabase && this.userId)
       void this.command("presence", { roomId: this.roomId, online: false });
@@ -225,7 +251,7 @@ export class RoomClient {
 
 export function playerNameError(name: string) {
   const trimmed = name.trim();
-  if (!trimmed) return "Please enter your name.";
+  if (!trimmed) return "Enter your name before continuing.";
   if (trimmed.length > 32) return "Name must be 32 characters or fewer.";
   if (!trimmed.replace(/[^\p{L}\p{N} _-]/gu, ""))
     return "Enter a name using letters, numbers, spaces, - or _.";

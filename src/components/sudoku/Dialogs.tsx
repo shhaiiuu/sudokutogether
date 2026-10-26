@@ -9,7 +9,17 @@ export interface Settings {
   showMistakes: boolean;
 }
 
-export function SettingsDialog({ open, onClose, settings, onChange }: { open: boolean; onClose: () => void; settings: Settings; onChange: (s: Settings) => void }) {
+export function SettingsDialog({
+  open,
+  onClose,
+  settings,
+  onChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
   const rows: [keyof Settings, string, string][] = [
     ["sound", "Sound", "Play subtle feedback sounds"],
     ["highlightRelated", "Highlight areas", "Row, column and box of the selected cell"],
@@ -34,47 +44,123 @@ export function SettingsDialog({ open, onClose, settings, onChange }: { open: bo
                 onClick={() => onChange({ ...settings, [k]: !settings[k] })}
                 className={`relative h-7 w-12 shrink-0 rounded-full transition ${settings[k] ? "bg-primary" : "bg-muted-foreground/30"}`}
               >
-                <span className={`absolute top-1 h-5 w-5 rounded-full bg-card shadow transition-all ${settings[k] ? "left-6" : "left-1"}`} />
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-card shadow transition-all ${settings[k] ? "left-6" : "left-1"}`}
+                />
               </button>
             </li>
           ))}
         </ul>
-        <PrimaryButton className="mt-4" onClick={onClose}>Done</PrimaryButton>
+        <PrimaryButton className="mt-4" onClick={onClose}>
+          Done
+        </PrimaryButton>
       </div>
     </Sheet>
   );
 }
 
-export function PauseDialog({ open, elapsed, difficulty, onResume, onHome }: { open: boolean; elapsed: number; difficulty: Difficulty; onResume: () => void; onHome: () => void }) {
+export function PauseDialog({
+  open,
+  elapsed,
+  difficulty,
+  onResume,
+  onHome,
+}: {
+  open: boolean;
+  elapsed: number;
+  difficulty: Difficulty;
+  onResume: () => void;
+  onHome: () => void;
+}) {
   return (
     <Sheet open={open} onClose={onResume} label="Paused">
       <div className="flex flex-col items-center gap-2 p-6">
         <Pause className="h-10 w-10 text-primary" />
         <h2 className="text-2xl font-bold">Paused</h2>
-        <p className="text-muted-foreground">{formatTime(elapsed)} · {difficulty}</p>
-        <PrimaryButton className="mt-4" onClick={onResume}>Resume</PrimaryButton>
+        <p className="text-muted-foreground">
+          {formatTime(elapsed)} · {difficulty}
+        </p>
+        <PrimaryButton className="mt-4" onClick={onResume}>
+          Resume
+        </PrimaryButton>
         <SecondaryButton onClick={onHome}>Main menu</SecondaryButton>
       </div>
     </Sheet>
   );
 }
 
+export function LeaveGameDialog({
+  open,
+  leaving = false,
+  onStay,
+  onLeave,
+}: {
+  open: boolean;
+  leaving?: boolean;
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <Sheet open={open} {...(leaving ? {} : { onClose: onStay })} label="Leave this game">
+      <div className="flex flex-col gap-3 p-6 text-center">
+        <h2 className="text-2xl font-bold">Leave this game?</h2>
+        <p className="text-muted-foreground">Are you sure you want to leave this game?</p>
+        <PrimaryButton className="mt-3" onClick={onLeave} disabled={leaving}>
+          {leaving ? "Leaving…" : "Leave Game"}
+        </PrimaryButton>
+        <SecondaryButton onClick={onStay} disabled={leaving}>
+          Stay
+        </SecondaryButton>
+      </div>
+    </Sheet>
+  );
+}
+
 export function CompleteDialog({
-  open, won, elapsed, difficulty, score, shared, onAgain, onHome,
-}: { open: boolean; won: boolean; elapsed: number; difficulty: Difficulty; score: number; shared?: boolean; onAgain: () => void; onHome: () => void }) {
+  open,
+  won,
+  elapsed,
+  difficulty,
+  score,
+  shared,
+  onAgain,
+  onHome,
+}: {
+  open: boolean;
+  won: boolean;
+  elapsed: number;
+  difficulty: Difficulty;
+  score: number;
+  shared?: boolean;
+  onAgain: () => void;
+  onHome: () => void;
+}) {
   return (
     <Sheet open={open} label={won ? "Puzzle solved" : "Game over"}>
       <div className="flex flex-col items-center gap-3 p-6 text-center">
         <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-primary">
           <PartyPopper className="h-8 w-8" />
         </span>
-        <h2 className="text-2xl font-extrabold">{won ? (shared ? "Solved together!" : "Puzzle solved!") : "Out of mistakes"}</h2>
+        <h2 className="text-2xl font-extrabold">
+          {won ? (shared ? "Solved together!" : "Puzzle solved!") : "Out of mistakes"}
+        </h2>
         <dl className="grid w-full grid-cols-3 gap-2 rounded-2xl bg-muted p-3">
-          <div><dt className="text-xs text-muted-foreground">Time</dt><dd className="font-bold">{formatTime(elapsed)}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Difficulty</dt><dd className="font-bold">{difficulty}</dd></div>
-          <div><dt className="text-xs text-muted-foreground">Score</dt><dd className="font-bold">{score.toLocaleString()}</dd></div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Time</dt>
+            <dd className="font-bold">{formatTime(elapsed)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Difficulty</dt>
+            <dd className="font-bold">{difficulty}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Score</dt>
+            <dd className="font-bold">{score.toLocaleString()}</dd>
+          </div>
         </dl>
-        <PrimaryButton className="mt-2" onClick={onAgain}>Play Again</PrimaryButton>
+        <PrimaryButton className="mt-2" onClick={onAgain}>
+          Play Again
+        </PrimaryButton>
         <SecondaryButton onClick={onHome}>Home</SecondaryButton>
       </div>
     </Sheet>

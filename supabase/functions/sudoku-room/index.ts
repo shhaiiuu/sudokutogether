@@ -88,6 +88,9 @@ async function command(db: SupabaseClient, userId: string, action: string, body:
     case "clear-notes":
       await requireMember(db, userId, String(body.roomId));
       return clearNotes(db, userId, String(body.roomId), Number(body.index));
+    case "erase":
+      await requireMember(db, userId, String(body.roomId));
+      return eraseCell(db, userId, String(body.roomId), Number(body.index));
     case "message":
       await requireMember(db, userId, String(body.roomId));
       return message(db, userId, String(body.roomId), String(body.text || ""));
@@ -298,6 +301,18 @@ async function clearNotes(db: SupabaseClient, userId: string, roomId: string, in
   if (removed.error) throw removed.error;
   return snapshot(db, userId, roomId);
 }
+
+async function eraseCell(db: SupabaseClient, userId: string, roomId: string, index: number) {
+  if (index < 0 || index > 80) throw new Error("Invalid erase cell.");
+  const erased = await db.rpc("erase_room_cell_atomic", {
+    p_room_id: roomId,
+    p_user_id: userId,
+    p_cell_index: index,
+  });
+  if (erased.error) throw erased.error;
+  return snapshot(db, userId, roomId);
+}
+
 async function message(db: SupabaseClient, userId: string, roomId: string, text: string) {
   const clean = text.trim().slice(0, 300);
   if (!clean) throw new Error("Message cannot be empty.");
@@ -413,6 +428,10 @@ async function snapshot(db: SupabaseClient, userId: string, roomId: string): Pro
     ? {
         puzzle: game.puzzle,
         grid: game.grid,
+        erasable: game.grid.map(
+          (value: number, i: number) =>
+            game.puzzle[i] === 0 && value !== 0 && value !== game.solution[i],
+        ),
         notes: Array.from(
           { length: 81 },
           (_, i) => notes.data?.find((n: Row) => n.cell_index === i)?.values ?? [],

@@ -29,11 +29,13 @@ export interface ChatMessage {
   playerId: string;
   text: string;
   at: number;
+  delivery?: "sending" | "sent" | "failed";
 }
 
 export interface RoomGameState {
   puzzle: number[];
   grid: number[];
+  erasable: boolean[];
   notes: number[][];
   elapsed: number;
   score: number;
@@ -56,6 +58,27 @@ export interface RoomSnapshot {
 export const MAX_PLAYERS = 4;
 export const PROPOSAL_TIMEOUT_MS = 300_000;
 export const RECONNECTION_GRACE_MS = 60_000;
+
+export function mergeChatMessages(current: ChatMessage[], incoming: ChatMessage[]) {
+  const merged = [...current];
+  for (const message of incoming) {
+    const exact = merged.findIndex((item) => item.id === message.id);
+    if (exact >= 0) {
+      merged[exact] = { ...merged[exact], ...message, delivery: "sent" };
+      continue;
+    }
+    const optimistic = merged.findIndex(
+      (item) =>
+        item.id.startsWith("temp-") &&
+        item.playerId === message.playerId &&
+        item.text === message.text &&
+        Math.abs(item.at - message.at) < 30_000,
+    );
+    if (optimistic >= 0) merged.splice(optimistic, 1);
+    merged.push({ ...message, delivery: "sent" });
+  }
+  return merged.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+}
 
 /** Pure display helper retained for unit tests; the server is authoritative in multiplayer. */
 export function resolveProposal(

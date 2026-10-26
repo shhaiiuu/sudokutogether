@@ -11,7 +11,7 @@ import { DailyChallengesPage } from "@/components/sudoku/DailyChallengesPage";
 import { ProfilePage } from "@/components/sudoku/ProfilePage";
 import type { NavigationPage } from "@/components/sudoku/BottomNav";
 import { RoomClient, snapshotGameToUi, type RoomConnection } from "@/lib/room-client";
-import type { RoomSnapshot } from "@/lib/room";
+import { mergeChatMessages, type ChatMessage, type RoomSnapshot } from "@/lib/room";
 import type { Difficulty } from "@/lib/sudoku";
 
 export const Route = createFileRoute("/")({
@@ -120,10 +120,18 @@ function App() {
     (next: RoomSnapshot) => {
       setRoom(next);
       setConnection("reconnecting");
-      void client.watch(next.roomId, setRoom, setTyping, setConnection).catch((error) => {
-        toast.error(error instanceof Error ? error.message : "Couldn't connect to the room");
-        setConnection("offline");
-      });
+      const onMessage = (message: ChatMessage) =>
+        setRoom((current) =>
+          current
+            ? { ...current, messages: mergeChatMessages(current.messages, [message]) }
+            : current,
+        );
+      void client
+        .watch(next.roomId, setRoom, setTyping, setConnection, onMessage)
+        .catch((error) => {
+          toast.error(error instanceof Error ? error.message : "Couldn't connect to the room");
+          setConnection("offline");
+        });
     },
     [client],
   );
@@ -150,8 +158,8 @@ function App() {
     setScreen({ name: "game", game });
   }, []);
 
-  const home = useCallback(() => {
-    void client.leaveRoom();
+  const home = useCallback(async () => {
+    await client.leaveRoom();
     setRoom(null);
     setTyping(null);
     setConnection("online");

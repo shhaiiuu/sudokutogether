@@ -15,15 +15,27 @@ import {
   POINTS,
   type Difficulty,
 } from "@/lib/sudoku";
-import type { Player, Proposal, RoomSnapshot } from "@/lib/room";
+import {
+  mergeChatMessages,
+  type ChatMessage,
+  type Player,
+  type Proposal,
+  type RoomSnapshot,
+} from "@/lib/room";
 import { RoomClient, type RoomConnection } from "@/lib/room-client";
 import { SudokuBoard } from "./SudokuBoard";
 import { GameControls, NumberPad } from "./GameControls";
 import { DifficultySheet } from "./DifficultySheet";
-import { CompleteDialog, PauseDialog, SettingsDialog, type Settings } from "./Dialogs";
+import {
+  CompleteDialog,
+  LeaveGameDialog,
+  PauseDialog,
+  SettingsDialog,
+  type Settings,
+} from "./Dialogs";
 import { PlayerBar } from "./PlayerList";
 import { ProposalPanel } from "./ProposalPanel";
-import { ChatPanel, type ChatMessage } from "./ChatPanel";
+import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -63,9 +75,11 @@ export function canEraseCell(
   solution: number[],
   notes: number[][],
   multiplayer = false,
+  erasable?: boolean[] | undefined,
 ) {
   if (selected === null || givens[selected]) return false;
-  if (grid[selected]) return !multiplayer && grid[selected] !== solution[selected];
+  if (grid[selected])
+    return multiplayer ? erasable?.[selected] === true : grid[selected] !== solution[selected];
   return (notes[selected]?.length ?? 0) > 0;
 }
 
@@ -102,6 +116,8 @@ export function GameScreen({
   const [paused, setPaused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [showLeave, setShowLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [done, setDone] = useState<null | "won" | "lost">(null);
   const [shakeCell, setShakeCell] = useState<number | null>(null);
   const [settings, setSettings] = useState<Settings>({
@@ -117,6 +133,7 @@ export function GameScreen({
   const [unread, setUnread] = useState(0);
   const dismissedProposal = useRef<string | null>(null);
   const prevOnline = useRef<Record<string, boolean>>({});
+  const seenChatIds = useRef(new Set((room?.messages ?? []).map((message) => message.id)));
 
   useEffect(() => setRoster(room?.players ?? players ?? []), [players, room?.players]);
   useEffect(() => {
@@ -130,7 +147,7 @@ export function GameScreen({
       score: room.game!.score,
       difficulty: room.difficulty,
     }));
-    setMessages(room.messages);
+    setMessages((current) => mergeChatMessages(current, room.messages));
     if (room.status === "completed") setDone("won");
     if (!room.proposal) setProposal(null);
     else if (dismissedProposal.current !== room.proposal.id) setProposal(room.proposal);
@@ -159,10 +176,36 @@ export function GameScreen({
   const myId = youId ?? roster.find((p) => p.isYou)?.id ?? "you";
 
   useEffect(() => {
+    if (chatOpen) {
+      setUnread(0);
+      for (const message of messages) seenChatIds.current.add(message.id);
+      return;
+    }
+    let incoming = 0;
+    for (const message of messages) {
+      if (!seenChatIds.current.has(message.id)) {
+        if (message.playerId !== myId && message.delivery !== "sending") incoming += 1;
+        seenChatIds.current.add(message.id);
+      }
+    }
+    if (incoming) setUnread((count) => count + incoming);
+  }, [chatOpen, messages, myId]);
+
+  useEffect(() => {
     if (!running || multi) return;
     const t = setInterval(() => setG((s) => ({ ...s, elapsed: s.elapsed + 1 })), 1000);
     return () => clearInterval(t);
   }, [multi, running]);
+
+  useEffect(() => {
+    if (done) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [done]);
 
   useEffect(() => {
     if (multi) return;
@@ -253,11 +296,46 @@ export function GameScreen({
       .catch((error) => toast.error(error instanceof Error ? error.message : "Vote failed"));
   };
 
-  const sendChat = (text: string) => {
+  const sendChat = (text: string, retryId?: string) => {
     if (!multi || !room || !roomClient) return;
+    const id = retryId ?? `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimistic: ChatMessage = {
+      id,
+      playerId: myId,
+      text,
+      at: Date.now(),
+      delivery: "sending",
+    };
+    setMessages((current) => {
+      const withoutRetry = current.filter((message) => message.id !== id);
+      return [...withoutRetry, optimistic].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
+    });
     void roomClient
       .sendMessage(room.roomId, text)
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Message failed"));
+      .then((snapshot) => setMessages((current) => mergeChatMessages(current, snapshot.messages)))
+      .catch((error) => {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === id ? { ...message, delivery: "failed" } : message,
+          ),
+        );
+        toast.error(error instanceof Error ? error.message : "Message failed");
+      });
+  };
+
+  const retryChat = (message: ChatMessage) => {
+    setMessages((current) =>
+      current.map((item) => (item.id === message.id ? { ...item, delivery: "sending" } : item)),
+    );
+    if (!multi || !room || !roomClient) return;
+    void roomClient
+      .sendMessage(room.roomId, message.text)
+      .then((snapshot) => setMessages((current) => mergeChatMessages(current, snapshot.messages)))
+      .catch(() =>
+        setMessages((current) =>
+          current.map((item) => (item.id === message.id ? { ...item, delivery: "failed" } : item)),
+        ),
+      );
   };
 
   const undo = () => {
@@ -266,13 +344,23 @@ export function GameScreen({
     setHistory((h) => h.slice(0, -1));
     setG((s) => ({ ...s, grid: last.grid, notes: last.notes }));
   };
-  const canErase = canEraseCell(sel, givens, g.grid, g.solution, g.notes, multi);
+  const canErase = canEraseCell(
+    sel,
+    givens,
+    g.grid,
+    g.solution,
+    g.notes,
+    multi,
+    room?.game?.erasable,
+  );
   const erase = () => {
     if (!canErase || sel === null) return;
     if (multi) {
       if (!room || !roomClient) return;
-      void roomClient
-        .clearNotes(room.roomId, sel)
+      const request = g.grid[sel]
+        ? roomClient.eraseCell(room.roomId, sel)
+        : roomClient.clearNotes(room.roomId, sel);
+      void request
         .then((snapshot) => {
           if (snapshot.game) setG((s) => ({ ...s, notes: snapshot.game!.notes }));
         })
@@ -328,6 +416,25 @@ export function GameScreen({
     setShowDiff(false);
   };
 
+  const requestLeave = useCallback(() => {
+    if (done) {
+      void onHome();
+      return;
+    }
+    setShowLeave(true);
+  }, [done, onHome]);
+
+  const confirmLeave = useCallback(async () => {
+    if (leaving) return;
+    setLeaving(true);
+    try {
+      await onHome();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't leave the game");
+      setLeaving(false);
+    }
+  }, [leaving, onHome]);
+
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === "INPUT" || !running) return;
@@ -359,7 +466,7 @@ export function GameScreen({
     <div className="flex min-h-dvh flex-col bg-background">
       <div className="mx-auto flex w-full max-w-lg flex-1 flex-col bg-card sm:my-4 sm:rounded-3xl sm:shadow-soft">
         <header className="grid grid-cols-[auto_1fr_auto] items-center px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <button onClick={onHome} aria-label="Back to home" className={iconBtn}>
+          <button onClick={requestLeave} aria-label="Back to home" className={iconBtn}>
             <ChevronLeft className="h-8 w-8" />
           </button>
           <p className="text-center text-xl font-extrabold tabular-nums" aria-label="Progress">
@@ -513,8 +620,7 @@ export function GameScreen({
           onClick={() => setChatOpen(true)}
           aria-label="Open chat"
           className={cn(
-            "fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button transition active:scale-90",
-            proposal ? "top-24" : "bottom-[max(1.25rem,env(safe-area-inset-bottom))] sm:bottom-6",
+            "fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button transition active:scale-90 sm:bottom-6",
           )}
         >
           <MessageCircle className="h-6 w-6" />
@@ -532,6 +638,7 @@ export function GameScreen({
         players={roster}
         typing={typing}
         onSend={sendChat}
+        onRetry={retryChat}
         onTyping={(isTyping) => {
           if (multi && roomClient)
             roomClient.broadcastTyping(roster.find((p) => p.isYou)?.name ?? "Player", isTyping);
@@ -557,7 +664,13 @@ export function GameScreen({
         elapsed={g.elapsed}
         difficulty={g.difficulty}
         onResume={() => setPaused(false)}
-        onHome={onHome}
+        onHome={requestLeave}
+      />
+      <LeaveGameDialog
+        open={showLeave}
+        leaving={leaving}
+        onStay={() => setShowLeave(false)}
+        onLeave={confirmLeave}
       />
       <CompleteDialog
         open={!!done}
