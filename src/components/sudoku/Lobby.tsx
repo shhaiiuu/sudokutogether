@@ -115,7 +115,10 @@ export function Lobby({
         >
           <ArrowLeft className="h-7 w-7" />
         </button>
-        <h1 className="text-center text-xl font-extrabold">Play with Friends</h1>
+        <h1 className="text-center text-xl font-extrabold">
+          <span className="text-foreground">Play with </span>
+          <span className="text-primary"> Friends</span> 
+        </h1>
         <span className="w-11" />
       </header>
 
