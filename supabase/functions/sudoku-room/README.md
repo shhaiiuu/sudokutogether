@@ -1,0 +1,1 @@
+This Edge Function is the only trusted multiplayer command boundary. Deploy it with the Supabase CLI after applying the migration. It uses the caller's JWT for identity and the service-role key only inside the function runtime; no service credential is bundled in the Vite client.
