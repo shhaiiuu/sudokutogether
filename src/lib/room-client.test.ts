@@ -117,4 +117,41 @@ describe("RoomClient realtime broadcast optimizations", () => {
     expect(localizedForUser1.players.find((p: Player) => p.id === "user-1")?.isYou).toBe(true);
     expect(localizedForUser1.players.find((p: Player) => p.id === "user-2")?.isYou).toBe(false);
   });
+
+  it("exposes watchingRoomId getter and reuses channel when watching the same room", async () => {
+    const client = new RoomClient();
+    client.userId = "user-1";
+    (client as unknown as { roomId: string }).roomId = "room-1";
+    (client as unknown as { channel: object }).channel = {};
+    const mockSnapshot = {
+      roomId: "room-1",
+      code: "ABCDEF",
+      players: [],
+    } as unknown as RoomSnapshot;
+    (client as unknown as { currentSnapshot: RoomSnapshot }).currentSnapshot = mockSnapshot;
+
+    expect(client.watchingRoomId).toBe("room-1");
+
+    const onSnapshot = vi.fn();
+    await client.watch("room-1", onSnapshot);
+
+    expect(onSnapshot).toHaveBeenCalledWith(mockSnapshot);
+    expect(client.watchingRoomId).toBe("room-1");
+  });
+
+  it("close() does not send presence(online: false)", () => {
+    const client = new RoomClient();
+    client.userId = "user-1";
+    (client as unknown as { roomId: string }).roomId = "room-1";
+    const command = vi.fn();
+    (client as unknown as { command: typeof command }).command = command;
+
+    client.close();
+
+    expect(command).not.toHaveBeenCalledWith(
+      "presence",
+      expect.objectContaining({ online: false }),
+    );
+    expect(client.watchingRoomId).toBeNull();
+  });
 });

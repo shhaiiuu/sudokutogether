@@ -6,7 +6,7 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 const MAX_PLAYERS = 4;
-const PRESENCE_WINDOW_MS = 60_000;
+const PRESENCE_WINDOW_MS = 90_000;
 const levels = new Set<Difficulty>(["Easy", "Medium", "Hard", "Expert", "Master", "Extreme"]);
 
 type Row = Record<string, unknown>;

@@ -29,6 +29,12 @@ export class RoomClient {
   private snapshotListener: SnapshotListener | null = null;
   private typingListener: TypingListener | null = null;
   private connectionListener: ConnectionListener | null = null;
+  private messageListener: MessageListener | null = null;
+  private cleanupVisibility: (() => void) | null = null;
+
+  get watchingRoomId(): string | null {
+    return this.roomId;
+  }
 
   async ensureIdentity() {
     if (!supabase)
@@ -159,8 +165,7 @@ export class RoomClient {
   ) {
     if (!supabase) throw new Error("Supabase is not configured.");
     await this.ensureIdentity();
-    this.close();
-    this.roomId = roomId;
+
     this.snapshotListener = (s) => {
       const localized = localizeSnapshot(s, this.userId);
       this.currentSnapshot = localized;
@@ -168,6 +173,18 @@ export class RoomClient {
     };
     this.typingListener = onTyping ?? null;
     this.connectionListener = onConnection ?? null;
+    this.messageListener = onMessage ?? null;
+
+    // If already watching this exact room on an active channel, avoid tearing down and reconnecting
+    if (this.roomId === roomId && this.channel) {
+      if (this.currentSnapshot) {
+        onSnapshot(this.currentSnapshot);
+      }
+      return;
+    }
+
+    this.close();
+    this.roomId = roomId;
     const channel = this.userId
       ? supabase.channel(`sudoku-room:${roomId}`, { config: { presence: { key: this.userId } } })
       : supabase.channel(`sudoku-room:${roomId}`);
@@ -226,7 +243,7 @@ export class RoomClient {
           filter: `room_id=eq.${roomId}`,
         },
         ({ new: row }) => {
-          onMessage?.({
+          this.messageListener?.({
             id: String(row["id"]),
             playerId: String(row["user_id"]),
             text: String(row["text"]),
@@ -237,7 +254,7 @@ export class RoomClient {
       )
       .on("broadcast", { event: "chat" }, ({ payload }) => {
         if (payload && payload.playerId !== this.userId) {
-          onMessage?.(payload as ChatMessage);
+          this.messageListener?.(payload as ChatMessage);
         }
       })
       .on("broadcast", { event: "player-ready" }, ({ payload }) => {
@@ -365,6 +382,27 @@ export class RoomClient {
       void this.touch(true);
     }, 15000);
     this.snapshotFallback = window.setInterval(() => void this.refreshSnapshot(), 30000);
+
+    const onVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void this.touch(true);
+        void this.refreshSnapshot();
+      }
+    };
+    const onOnline = () => {
+      void this.touch(true);
+      void this.refreshSnapshot();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("visibilitychange", onVisibilityOrFocus);
+      window.addEventListener("focus", onVisibilityOrFocus);
+      window.addEventListener("online", onOnline);
+      this.cleanupVisibility = () => {
+        window.removeEventListener("visibilitychange", onVisibilityOrFocus);
+        window.removeEventListener("focus", onVisibilityOrFocus);
+        window.removeEventListener("online", onOnline);
+      };
+    }
   }
 
   broadcastTyping(name: string, typing: boolean) {
@@ -453,11 +491,13 @@ export class RoomClient {
     if (this.heartbeat !== undefined) window.clearInterval(this.heartbeat);
     if (this.snapshotFallback !== undefined) window.clearInterval(this.snapshotFallback);
     if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
+    if (this.cleanupVisibility) {
+      this.cleanupVisibility();
+      this.cleanupVisibility = null;
+    }
     this.heartbeat = undefined;
     this.snapshotFallback = undefined;
     this.refreshTimer = undefined;
-    if (this.roomId && supabase && this.userId)
-      void this.command("presence", { roomId: this.roomId, online: false });
     if (this.channel && supabase) void supabase.removeChannel(this.channel);
     this.channel = null;
     this.roomId = null;
@@ -465,6 +505,7 @@ export class RoomClient {
     this.snapshotListener = null;
     this.typingListener = null;
     this.connectionListener = null;
+    this.messageListener = null;
   }
 
   private async touch(online: boolean) {

@@ -106,7 +106,9 @@ function App() {
   const watchRoom = useCallback(
     (next: RoomSnapshot) => {
       setRoom(next);
-      setConnection("reconnecting");
+      if (client.watchingRoomId === next.roomId) {
+        return;
+      }
       const onMessage = (message: ChatMessage) =>
         setRoom((current) =>
           current
