@@ -57,7 +57,7 @@ export function ProposalPanel({
           </span>
         </div>
       </div>
-      <ul className="mt-2 divide-y">
+      <ul className="mt-2 divide-y max-h-36 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {players.map((p) => (
           <PlayerRow key={p.id} player={p} vote={proposal.votes[p.id] ?? "pending"} />
         ))}
@@ -66,13 +66,13 @@ export function ProposalPanel({
         <div className="mt-3 grid grid-cols-2 gap-3">
           <button
             onClick={() => onVote("no")}
-            className="flex min-h-12 items-center justify-center gap-2 rounded-full bg-muted font-bold text-destructive active:scale-95"
+            className="flex min-h-11 sm:min-h-12 items-center justify-center gap-2 rounded-full bg-muted font-bold text-destructive transition active:scale-95"
           >
             <X className="h-5 w-5" /> No
           </button>
           <button
             onClick={() => onVote("yes")}
-            className="flex min-h-12 items-center justify-center gap-2 rounded-full bg-primary font-bold text-primary-foreground shadow-button active:scale-95"
+            className="flex min-h-11 sm:min-h-12 items-center justify-center gap-2 rounded-full bg-primary font-bold text-primary-foreground shadow-button transition active:scale-95"
           >
             <Check className="h-5 w-5" /> Yes
           </button>

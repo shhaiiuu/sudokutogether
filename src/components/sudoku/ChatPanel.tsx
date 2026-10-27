@@ -38,11 +38,12 @@ export function ChatPanel({
       wasOpen.current = false;
       return;
     }
-    if (!wasOpen.current || nearBottom.current) end.current?.scrollIntoView({ block: "end" });
+    if (!wasOpen.current || nearBottom.current) end.current?.scrollIntoView?.({ block: "end" });
     wasOpen.current = true;
   }, [messages.length, typing, open]);
   if (!open) return null;
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+  const typingPlayer = typing ? players.find((p) => p.name === typing) : null;
   const opponents = players.filter((p) => !p.isYou);
   const subtitle =
     opponents.length === 0
@@ -84,24 +85,43 @@ export function ChatPanel({
           const sender = mine ? "You" : (p?.name ?? "Player");
           const failed = m.delivery === "failed";
           return (
-            <div key={m.id} className={cn("flex items-end gap-2", mine && "flex-row-reverse")}>
-              {p && !mine && <Avatar player={p} size="sm" />}
-              <div className={cn("flex max-w-[78%] flex-col", mine && "items-end")}>
-                <p className="mb-1 px-1 text-xs font-bold text-muted-foreground">{sender}</p>
+            <div
+              key={m.id}
+              className={cn("flex flex-col gap-0.5", mine ? "items-end" : "items-start")}
+            >
+              <p
+                className={cn(
+                  "mb-0.5 text-xs font-bold text-muted-foreground",
+                  mine ? "mr-1 text-right" : "ml-10 text-left",
+                )}
+              >
+                {sender}
+              </p>
+              <div className={cn("flex items-start gap-2", mine && "flex-row-reverse")}>
+                {p && !mine && (
+                  <div className="shrink-0 pt-0.5">
+                    <Avatar player={p} size="sm" />
+                  </div>
+                )}
                 <div
-                  className={cn(
-                    "rounded-2xl px-3 py-2 text-sm shadow-sm",
-                    mine
-                      ? "rounded-br-sm bg-primary text-primary-foreground"
-                      : "rounded-bl-sm bg-muted text-foreground",
-                    failed && "border border-destructive bg-destructive/10 text-destructive",
-                  )}
+                  className={cn("flex max-w-[78%] flex-col", mine ? "items-end" : "items-start")}
                 >
-                  <p className="break-words">{m.text}</p>
+                  <div
+                    className={cn(
+                      "rounded-2xl px-3 py-2 text-sm shadow-sm",
+                      mine
+                        ? "rounded-br-sm bg-primary text-primary-foreground"
+                        : "rounded-bl-sm bg-muted text-foreground",
+                      failed && "border border-destructive bg-destructive/10 text-destructive",
+                    )}
+                  >
+                    <p className="break-words">{m.text}</p>
+                  </div>
                   <p
                     className={cn(
-                      "mt-1 text-[10px]",
-                      mine && !failed ? "text-primary-foreground/70" : "text-muted-foreground",
+                      "mt-1 px-1 text-[10px]",
+                      mine ? "text-right" : "text-left",
+                      failed ? "text-destructive" : "text-muted-foreground",
                     )}
                   >
                     {failed
@@ -113,21 +133,22 @@ export function ChatPanel({
                             minute: "2-digit",
                           })}
                   </p>
+                  {failed && onRetry && (
+                    <button
+                      onClick={() => onRetry(m)}
+                      className="mt-1 px-1 text-xs font-semibold text-destructive underline"
+                    >
+                      Retry
+                    </button>
+                  )}
                 </div>
-                {failed && onRetry && (
-                  <button
-                    onClick={() => onRetry(m)}
-                    className="mt-1 px-1 text-xs font-semibold text-destructive underline"
-                  >
-                    Retry
-                  </button>
-                )}
               </div>
             </div>
           );
         })}
         {typing && (
-          <div className="flex items-center gap-2 px-2">
+          <div className="flex items-center gap-2 px-1 py-1">
+            {typingPlayer && <Avatar player={typingPlayer} size="sm" />}
             <span className="text-xs font-semibold text-muted-foreground">{typing}</span>
             <span className="inline-flex gap-0.5 text-muted-foreground" aria-label="typing">
               <span className="animate-bounce [animation-delay:-0.3s]">•</span>

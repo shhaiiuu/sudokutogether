@@ -101,7 +101,12 @@ export function LeaveGameDialog({
   onLeave: () => void;
 }) {
   return (
-    <Sheet open={open} {...(leaving ? {} : { onClose: onStay })} label="Leave this game">
+    <Sheet
+      open={open}
+      position="center"
+      {...(leaving ? {} : { onClose: onStay })}
+      label="Leave this game"
+    >
       <div className="flex flex-col gap-3 p-6 text-center">
         <h2 className="text-2xl font-bold">Leave this game?</h2>
         <p className="text-muted-foreground">Are you sure you want to leave this game?</p>

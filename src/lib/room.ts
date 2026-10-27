@@ -39,6 +39,7 @@ export interface RoomGameState {
   notes: number[][];
   elapsed: number;
   score: number;
+  mistakes?: number;
   completed: boolean;
   revision: number;
 }
@@ -69,7 +70,7 @@ export function mergeChatMessages(current: ChatMessage[], incoming: ChatMessage[
     }
     const optimistic = merged.findIndex(
       (item) =>
-        item.id.startsWith("temp-") &&
+        (item.id.startsWith("temp-") || item.id.startsWith("msg-")) &&
         item.playerId === message.playerId &&
         item.text === message.text &&
         Math.abs(item.at - message.at) < 30_000,

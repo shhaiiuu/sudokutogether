@@ -7,9 +7,6 @@ import { HomeScreen } from "@/components/sudoku/HomeScreen";
 import { DifficultySheet } from "@/components/sudoku/DifficultySheet";
 import { GameScreen, newGame, type GameState } from "@/components/sudoku/GameScreen";
 import { Lobby } from "@/components/sudoku/Lobby";
-import { DailyChallengesPage } from "@/components/sudoku/DailyChallengesPage";
-import { ProfilePage } from "@/components/sudoku/ProfilePage";
-import type { NavigationPage } from "@/components/sudoku/BottomNav";
 import { RoomClient, snapshotGameToUi, type RoomConnection } from "@/lib/room-client";
 import { mergeChatMessages, type ChatMessage, type RoomSnapshot } from "@/lib/room";
 import type { Difficulty } from "@/lib/sudoku";
@@ -35,12 +32,8 @@ export const Route = createFileRoute("/")({
   component: App,
 });
 
-type Screen =
-  | { name: "home" }
-  | { name: "daily" }
-  | { name: "profile" }
-  | { name: "game"; game: GameState }
-  | { name: "lobby" };
+type Screen = { name: "home" } | { name: "game"; game: GameState } | { name: "lobby" };
+
 const SAVE = "st.saved";
 const STATS = "st.stats";
 function read<T>(k: string, fallback: T): T {
@@ -110,12 +103,6 @@ function App() {
     setScreen({ name: "game", game: newGame(d) });
   };
 
-  const navigate = useCallback((page: NavigationPage) => {
-    if (page === "main") setScreen({ name: "home" });
-    else if (page === "daily") setScreen({ name: "daily" });
-    else setScreen({ name: "profile" });
-  }, []);
-
   const watchRoom = useCallback(
     (next: RoomSnapshot) => {
       setRoom(next);
@@ -173,20 +160,15 @@ function App() {
       {screen.name === "home" && (
         <>
           <HomeScreen
-            streak={stats.streak}
             best={stats.best}
             saved={saved}
             onContinue={() => saved && setScreen({ name: "game", game: saved })}
             onNewGame={() => setPickDiff(true)}
             onMultiplayer={() => setScreen({ name: "lobby" })}
-            onEvent={start}
-            onNavigate={navigate}
           />
           <DifficultySheet open={pickDiff} onClose={() => setPickDiff(false)} onPick={start} />
         </>
       )}
-      {screen.name === "daily" && <DailyChallengesPage onNavigate={navigate} />}
-      {screen.name === "profile" && <ProfilePage onNavigate={navigate} />}
       {screen.name === "lobby" && (
         <Lobby
           client={client}

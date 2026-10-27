@@ -25,6 +25,7 @@ export class RoomClient {
   private heartbeat: number | undefined;
   private snapshotFallback: number | undefined;
   private refreshTimer: number | undefined;
+  private currentSnapshot: RoomSnapshot | null = null;
   private snapshotListener: SnapshotListener | null = null;
   private typingListener: TypingListener | null = null;
   private connectionListener: ConnectionListener | null = null;
@@ -74,10 +75,21 @@ export class RoomClient {
     return this.command<RoomSnapshot>("start", { roomId });
   }
   async proposeMove(roomId: string, index: number, value: number) {
-    return this.command<RoomSnapshot>("propose", { roomId, index, value });
+    const snapshot = await this.command<RoomSnapshot>("propose", { roomId, index, value });
+    // Immediately broadcast the new snapshot so the other player sees the proposal
+    // without waiting for postgres_changes → scheduleRefresh → HTTP round-trip.
+    this.broadcastSnapshot(snapshot);
+    // Also push it to the local listener so the proposer's own UI updates right away.
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async vote(roomId: string, proposalId: string, vote: "yes" | "no") {
-    return this.command<RoomSnapshot>("vote", { roomId, proposalId, vote });
+    const snapshot = await this.command<RoomSnapshot>("vote", { roomId, proposalId, vote });
+    // Broadcast updated vote state so the other player sees it instantly.
+    this.broadcastSnapshot(snapshot);
+    // Push to local listener for immediate self-update.
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async cancelProposal(roomId: string, proposalId: string) {
     return this.command<RoomSnapshot>("cancel", { roomId, proposalId });
@@ -92,7 +104,40 @@ export class RoomClient {
     return this.command<RoomSnapshot>("erase", { roomId, index });
   }
   async sendMessage(roomId: string, text: string) {
-    return this.command<RoomSnapshot>("message", { roomId, text: text.slice(0, 300) });
+    const clean = text.slice(0, 300);
+    if (this.channel && this.userId) {
+      const broadcastMsg: ChatMessage = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        playerId: this.userId,
+        text: clean,
+        at: Date.now(),
+        delivery: "sent",
+      };
+      void this.channel.send({
+        type: "broadcast",
+        event: "chat",
+        payload: broadcastMsg,
+      });
+    }
+    return this.command<RoomSnapshot>("message", { roomId, text: clean });
+  }
+
+  broadcastReady(roomId: string, ready: boolean) {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "player-ready",
+      payload: { userId: this.userId, ready },
+    });
+  }
+
+  broadcastGameStart(snapshot: RoomSnapshot) {
+    if (!this.channel) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "game-start",
+      payload: { snapshot },
+    });
   }
 
   async watch(
@@ -106,7 +151,10 @@ export class RoomClient {
     await this.ensureIdentity();
     this.close();
     this.roomId = roomId;
-    this.snapshotListener = onSnapshot;
+    this.snapshotListener = (s) => {
+      this.currentSnapshot = s;
+      onSnapshot(s);
+    };
     this.typingListener = onTyping ?? null;
     this.connectionListener = onConnection ?? null;
     const channel = this.userId
@@ -123,14 +171,31 @@ export class RoomClient {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "room_members", filter: `room_id=eq.${roomId}` },
-        refresh,
+        (payload) => {
+          const oldRow = payload.old as Record<string, unknown> | undefined;
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          // Only refresh if membership changed or ready/online/name status toggled
+          if (
+            payload.eventType === "INSERT" ||
+            payload.eventType === "DELETE" ||
+            oldRow?.["ready"] !== newRow?.["ready"] ||
+            oldRow?.["online"] !== newRow?.["online"] ||
+            oldRow?.["name"] !== newRow?.["name"]
+          ) {
+            refresh();
+          }
+        },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "proposals", filter: `room_id=eq.${roomId}` },
         refresh,
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "proposal_votes" }, refresh)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "proposal_votes", filter: `room_id=eq.${roomId}` },
+        refresh,
+      )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "room_notes", filter: `room_id=eq.${roomId}` },
@@ -159,8 +224,87 @@ export class RoomClient {
           });
         },
       )
+      .on("broadcast", { event: "chat" }, ({ payload }) => {
+        if (payload && payload.playerId !== this.userId) {
+          onMessage?.(payload as ChatMessage);
+        }
+      })
+      .on("broadcast", { event: "player-ready" }, ({ payload }) => {
+        if (payload && payload.userId !== this.userId) {
+          if (this.currentSnapshot) {
+            const updated: RoomSnapshot = {
+              ...this.currentSnapshot,
+              players: this.currentSnapshot.players.map((p) =>
+                p.id === payload.userId ? { ...p, ready: Boolean(payload.ready) } : p,
+              ),
+            };
+            this.currentSnapshot = updated;
+            this.snapshotListener?.(updated);
+          }
+          refresh();
+        }
+      })
+      .on("broadcast", { event: "game-start" }, ({ payload }) => {
+        if (payload?.snapshot) {
+          const s = payload.snapshot as RoomSnapshot;
+          this.currentSnapshot = s;
+          this.snapshotListener?.(s);
+        }
+      })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if (payload.userId !== this.userId) this.typingListener?.(payload.name || null);
+      })
+      .on("broadcast", { event: "proposal-opened" }, ({ payload }) => {
+        if (payload && payload.from !== this.userId && payload.proposal) {
+          if (this.currentSnapshot) {
+            const updated: RoomSnapshot = {
+              ...this.currentSnapshot,
+              proposal: payload.proposal as Proposal,
+            };
+            this.currentSnapshot = updated;
+            this.snapshotListener?.(updated);
+          }
+        }
+      })
+      .on("broadcast", { event: "vote-cast" }, ({ payload }) => {
+        if (payload && payload.from !== this.userId) {
+          if (this.currentSnapshot && this.currentSnapshot.proposal) {
+            const curProp = this.currentSnapshot.proposal;
+            const updated: RoomSnapshot = {
+              ...this.currentSnapshot,
+              proposal: {
+                ...curProp,
+                votes: {
+                  ...curProp.votes,
+                  [payload.voterId]: payload.vote,
+                },
+              },
+            };
+            this.currentSnapshot = updated;
+            this.snapshotListener?.(updated);
+          }
+        }
+      })
+      .on("broadcast", { event: "proposal-cancelled" }, ({ payload }) => {
+        if (payload && payload.from !== this.userId) {
+          if (this.currentSnapshot) {
+            const updated: RoomSnapshot = {
+              ...this.currentSnapshot,
+              proposal: null,
+            };
+            this.currentSnapshot = updated;
+            this.snapshotListener?.(updated);
+          }
+        }
+      })
+      .on("broadcast", { event: "room-snapshot" }, ({ payload }) => {
+        // Accept the snapshot broadcast by the *other* player after propose/vote.
+        // This eliminates the postgres_changes → HTTP round-trip delay for them.
+        if (payload && payload.from !== this.userId && payload.snapshot) {
+          const s = payload.snapshot as RoomSnapshot;
+          this.currentSnapshot = s;
+          this.snapshotListener?.(s);
+        }
       })
       .on("presence", { event: "sync" }, () => refresh())
       .subscribe(async (status) => {
@@ -172,13 +316,15 @@ export class RoomClient {
               : "reconnecting";
         this.connectionListener?.(connection);
         if (status === "SUBSCRIBED") {
+          await this.channel?.track({ online: true, userId: this.userId, at: Date.now() });
           await this.touch(true);
           await this.refreshSnapshot();
         }
       });
+    // Fallback heartbeat to refresh persistent last_seen_at every 15s
     this.heartbeat = window.setInterval(() => {
       void this.touch(true);
-    }, 5000);
+    }, 15000);
     this.snapshotFallback = window.setInterval(() => void this.refreshSnapshot(), 30000);
   }
 
@@ -189,6 +335,54 @@ export class RoomClient {
       event: "typing",
       payload: { userId: this.userId, name: typing ? name : null },
     });
+  }
+
+  broadcastProposal(proposal: Proposal) {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "proposal-opened",
+      payload: { proposal, from: this.userId },
+    });
+  }
+
+  broadcastVote(proposalId: string, voterId: string, vote: "yes" | "no") {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "vote-cast",
+      payload: { proposalId, voterId, vote, from: this.userId },
+    });
+  }
+
+  broadcastProposalCancel(proposalId: string) {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "proposal-cancelled",
+      payload: { proposalId, from: this.userId },
+    });
+  }
+
+  /** Broadcast the current room snapshot to all channel subscribers instantly.
+   *  Used after propose/vote so the other player sees the new state without
+   *  waiting for the postgres_changes → scheduleRefresh → HTTP round-trip.
+   */
+  broadcastSnapshot(snapshot: RoomSnapshot) {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "room-snapshot",
+      payload: { snapshot, from: this.userId },
+    });
+  }
+
+  /** Push a snapshot directly to the local listener (no network call).
+   *  Used to update the proposer's own UI immediately after a propose/vote resolves.
+   */
+  pushSnapshot(snapshot: RoomSnapshot) {
+    this.currentSnapshot = snapshot;
+    this.snapshotListener?.(snapshot);
   }
 
   close() {
@@ -203,6 +397,7 @@ export class RoomClient {
     if (this.channel && supabase) void supabase.removeChannel(this.channel);
     this.channel = null;
     this.roomId = null;
+    this.currentSnapshot = null;
     this.snapshotListener = null;
     this.typingListener = null;
     this.connectionListener = null;
@@ -229,6 +424,7 @@ export class RoomClient {
     if (!this.roomId) return;
     try {
       const snapshot = await this.command<RoomSnapshot>("snapshot", { roomId: this.roomId });
+      this.currentSnapshot = snapshot;
       this.snapshotListener?.(snapshot);
     } catch {
       /* connection banner communicates a transient failure */
@@ -243,7 +439,21 @@ export class RoomClient {
     const { data, error } = await supabase.functions.invoke("sudoku-room", {
       body: { action, ...payload },
     });
-    if (error) throw new Error(error.message || "The multiplayer server rejected the request.");
+    if (error) {
+      let serverErrorMsg = error.message;
+      try {
+        if ("context" in error && error.context) {
+          const res = error.context as Response;
+          if (typeof res.json === "function") {
+            const body = (await res.json()) as { error?: string };
+            if (body?.error) serverErrorMsg = body.error;
+          }
+        }
+      } catch {
+        /* fallback to error.message */
+      }
+      throw new Error(serverErrorMsg || "The multiplayer server rejected the request.");
+    }
     if (!data?.ok) throw new Error(data?.error || "The multiplayer server rejected the request.");
     return data.data as T;
   }

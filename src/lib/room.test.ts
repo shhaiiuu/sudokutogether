@@ -142,4 +142,28 @@ describe("move voting", () => {
       mergeChatMessages([server], [{ id: "server-1", playerId: "a", text: "Hello", at: 10_001 }]),
     ).toHaveLength(1);
   });
+
+  it("reconciles a Realtime broadcast message with the persisted server message", () => {
+    const broadcastMsg = {
+      id: "msg-123456",
+      playerId: "b",
+      text: "Great move!",
+      at: 20_000,
+      delivery: "sent" as const,
+    };
+    const persistedServerMsg = {
+      id: "uuid-server-999",
+      playerId: "b",
+      text: "Great move!",
+      at: 20_005,
+      delivery: "sent" as const,
+    };
+    const afterBroadcast = mergeChatMessages([], [broadcastMsg]);
+    expect(afterBroadcast).toEqual([broadcastMsg]);
+
+    const afterServerPersistence = mergeChatMessages(afterBroadcast, [persistedServerMsg]);
+    // Should replace the broadcast message, keeping length = 1
+    expect(afterServerPersistence).toHaveLength(1);
+    expect(afterServerPersistence[0]?.id).toBe("uuid-server-999");
+  });
 });

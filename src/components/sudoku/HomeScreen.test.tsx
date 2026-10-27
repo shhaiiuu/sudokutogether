@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { EVENTS, getEventCountdown } from "./HomeScreen";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { EVENTS, getEventCountdown, HomeScreen } from "./HomeScreen";
 
 describe("event countdowns", () => {
   const end = "2026-12-01T12:00:00Z";
@@ -33,5 +34,64 @@ describe("event countdowns", () => {
       expect(Number.isNaN(Date.parse(event.endAt))).toBe(false);
       expect(Date.parse(event.startAt)).toBeLessThan(Date.parse(event.endAt));
     }
+  });
+});
+
+describe("HomeScreen UI", () => {
+  it("renders header with wordmark and white 40px round settings button which opens settings", () => {
+    render(
+      <HomeScreen
+        best={1250}
+        saved={null}
+        onContinue={vi.fn()}
+        onNewGame={vi.fn()}
+        onMultiplayer={vi.fn()}
+      />,
+    );
+
+    // Wordmark
+    expect(screen.getByRole("heading", { name: "Sudoku Together" })).toBeInTheDocument();
+
+    // Settings round button
+    const settingsBtn = screen.getByRole("button", { name: "Settings" });
+    expect(settingsBtn).toBeInTheDocument();
+    expect(settingsBtn.className).toContain("rounded-full");
+    expect(settingsBtn.className).toContain("h-10");
+    expect(settingsBtn.className).toContain("w-10");
+
+    // Click settings opens dialog
+    fireEvent.click(settingsBtn);
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("renders LetterGridLogo and all-time best score and action buttons", () => {
+    const onNewGame = vi.fn();
+    const onMultiplayer = vi.fn();
+
+    render(
+      <HomeScreen
+        best={4500}
+        saved={null}
+        onContinue={vi.fn()}
+        onNewGame={onNewGame}
+        onMultiplayer={onMultiplayer}
+      />,
+    );
+
+    // LetterGridLogo text
+    expect(screen.getByText("TOGETHER")).toBeInTheDocument();
+    expect(screen.getByText("All-Time Best Score")).toBeInTheDocument();
+    expect(screen.getByText("4,500")).toBeInTheDocument();
+
+    // Buttons
+    const newGameBtn = screen.getByRole("button", { name: /New Game/i });
+    expect(newGameBtn).toBeInTheDocument();
+    fireEvent.click(newGameBtn);
+    expect(onNewGame).toHaveBeenCalled();
+
+    const multiplayerBtn = screen.getByRole("button", { name: /Play with Friends/i });
+    expect(multiplayerBtn).toBeInTheDocument();
+    fireEvent.click(multiplayerBtn);
+    expect(onMultiplayer).toHaveBeenCalled();
   });
 });

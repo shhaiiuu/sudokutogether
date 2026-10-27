@@ -82,7 +82,7 @@ export function NumberPad({
             disabled={disabled || done}
             aria-label={done ? `${n} complete` : `Enter ${n}`}
             className={cn(
-              "flex h-16 items-center justify-center rounded-xl text-[min(10vw,2.75rem)] font-normal transition active:scale-90 active:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground",
+              "flex h-11 sm:h-13 items-center justify-center rounded-xl text-2xl sm:text-3xl font-semibold transition active:scale-90 active:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:text-muted-foreground",
               notesOn ? "text-muted-foreground" : "text-cell-entered",
             )}
           >

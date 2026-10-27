@@ -18,12 +18,25 @@ export function Avatar({ player, size = "md" }: { player: Player; size?: "sm" | 
       >
         {player.name.slice(0, 2).toUpperCase()}
       </span>
-      <span className={cn("absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card", player.online ? "bg-success" : "bg-muted-foreground")} />
+      <span
+        className={cn(
+          "absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+          player.online ? "bg-success" : "bg-muted-foreground",
+        )}
+      />
     </span>
   );
 }
 
-export function PlayerRow({ player, vote, showReady }: { player: Player; vote?: Vote; showReady?: boolean }) {
+export function PlayerRow({
+  player,
+  vote,
+  showReady,
+}: {
+  player: Player;
+  vote?: Vote;
+  showReady?: boolean;
+}) {
   return (
     <li className="flex items-center gap-3 py-2">
       <Avatar player={player} />
@@ -36,7 +49,12 @@ export function PlayerRow({ player, vote, showReady }: { player: Player; vote?: 
         <p className="text-xs text-muted-foreground">{player.online ? "Online" : "Disconnected"}</p>
       </div>
       {showReady && (
-        <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", player.ready ? "bg-success/15 text-success" : "bg-muted text-muted-foreground")}>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-xs font-bold",
+            player.ready ? "bg-success/15 text-success" : "bg-muted text-muted-foreground",
+          )}
+        >
           {player.ready ? "Ready" : "Not ready"}
         </span>
       )}
@@ -47,9 +65,26 @@ export function PlayerRow({ player, vote, showReady }: { player: Player; vote?: 
 
 function VoteBadge({ vote, offline }: { vote: Vote; offline?: boolean }) {
   if (offline) return <span className="text-xs text-muted-foreground">Skipped</span>;
-  if (vote === "yes") return <span className="flex items-center gap-1 text-sm font-bold text-success"><Check className="h-4 w-4" />Yes</span>;
-  if (vote === "no") return <span className="flex items-center gap-1 text-sm font-bold text-destructive"><X className="h-4 w-4" />No</span>;
-  return <span className="flex items-center gap-1 text-sm text-muted-foreground"><Clock className="h-4 w-4 animate-pulse" />Waiting</span>;
+  if (vote === "yes")
+    return (
+      <span className="flex items-center gap-1 text-sm font-bold text-success">
+        <Check className="h-4 w-4" />
+        Yes
+      </span>
+    );
+  if (vote === "no")
+    return (
+      <span className="flex items-center gap-1 text-sm font-bold text-destructive">
+        <X className="h-4 w-4" />
+        No
+      </span>
+    );
+  return (
+    <span className="flex items-center gap-1 text-sm text-muted-foreground">
+      <Clock className="h-4 w-4 animate-pulse" />
+      Waiting
+    </span>
+  );
 }
 
 export function PlayerBar({ players }: { players: Player[] }) {

@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Settings as Cog,
   Trophy,
+  X,
 } from "lucide-react";
 import {
   conflicts as findConflicts,
@@ -36,6 +37,7 @@ import {
 import { PlayerBar } from "./PlayerList";
 import { ProposalPanel } from "./ProposalPanel";
 import { ChatPanel } from "./ChatPanel";
+import { playProposalSound } from "@/lib/sound";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -128,12 +130,21 @@ export function GameScreen({
   });
   const [roster, setRoster] = useState<Player[]>(room?.players ?? players ?? []);
   const [proposal, setProposal] = useState<Proposal | null>(room?.proposal ?? null);
+  const [optimisticProposal, setOptimisticProposal] = useState<{
+    index: number;
+    value: number;
+  } | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(room?.messages ?? []);
   const [unread, setUnread] = useState(0);
   const dismissedProposal = useRef<string | null>(null);
+  const lastSoundProposalId = useRef<string | null>(null);
+  const proposalRef = useRef<HTMLDivElement>(null);
   const prevOnline = useRef<Record<string, boolean>>({});
-  const seenChatIds = useRef(new Set((room?.messages ?? []).map((message) => message.id)));
+  const myId = youId ?? roster.find((p) => p.isYou)?.id ?? "you";
+  const seenChatIds = useRef(
+    new Set((room?.messages ?? []).filter((m) => m.playerId === myId).map((m) => m.id)),
+  );
 
   useEffect(() => setRoster(room?.players ?? players ?? []), [players, room?.players]);
   useEffect(() => {
@@ -145,13 +156,39 @@ export function GameScreen({
       notes: room.game!.notes,
       elapsed: room.game!.elapsed,
       score: room.game!.score,
+      mistakes: room.game!.mistakes ?? current.mistakes,
       difficulty: room.difficulty,
     }));
-    setMessages((current) => mergeChatMessages(current, room.messages));
     if (room.status === "completed") setDone("won");
-    if (!room.proposal) setProposal(null);
-    else if (dismissedProposal.current !== room.proposal.id) setProposal(room.proposal);
-  }, [multi, room]);
+    else if (settings.showMistakes && (room.game?.mistakes ?? 0) >= MAX_MISTAKES) setDone("lost");
+    if (!room.proposal) {
+      setProposal(null);
+      setOptimisticProposal(null);
+    } else if (dismissedProposal.current !== room.proposal.id) {
+      setProposal(room.proposal);
+      setOptimisticProposal(null);
+    }
+  }, [multi, room, settings.showMistakes]);
+
+  useEffect(() => {
+    if (!proposal || proposal.status !== "waiting" || !proposal.id) return;
+    if (lastSoundProposalId.current !== proposal.id) {
+      lastSoundProposalId.current = proposal.id;
+      playProposalSound();
+    }
+  }, [proposal]);
+
+  useEffect(() => {
+    if (proposal && proposal.status === "waiting") {
+      proposalRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [proposal]);
+
+  useEffect(() => {
+    if (room?.messages) {
+      setMessages((current) => mergeChatMessages(current, room.messages));
+    }
+  }, [room?.messages]);
   useEffect(() => {
     for (const p of roster) {
       const was = prevOnline.current[p.id];
@@ -167,13 +204,12 @@ export function GameScreen({
   const wrong = useMemo(
     () =>
       multi
-        ? new Set<number>()
+        ? new Set(room?.game?.erasable?.flatMap((e, i) => (e && g.grid[i] ? [i] : [])) ?? [])
         : new Set(g.grid.flatMap((v, i) => (v && !g.puzzle[i] && v !== g.solution[i] ? [i] : []))),
-    [g, multi],
+    [g, multi, room?.game?.erasable],
   );
   const givens = useMemo(() => g.puzzle.map(Boolean), [g.puzzle]);
   const running = !paused && !done && !showSettings && !showDiff;
-  const myId = youId ?? roster.find((p) => p.isYou)?.id ?? "you";
 
   useEffect(() => {
     if (chatOpen) {
@@ -181,14 +217,10 @@ export function GameScreen({
       for (const message of messages) seenChatIds.current.add(message.id);
       return;
     }
-    let incoming = 0;
-    for (const message of messages) {
-      if (!seenChatIds.current.has(message.id)) {
-        if (message.playerId !== myId && message.delivery !== "sending") incoming += 1;
-        seenChatIds.current.add(message.id);
-      }
-    }
-    if (incoming) setUnread((count) => count + incoming);
+    const unreadCount = messages.filter(
+      (m) => m.playerId !== myId && m.delivery !== "sending" && !seenChatIds.current.has(m.id),
+    ).length;
+    setUnread(unreadCount);
   }, [chatOpen, messages, myId]);
 
   useEffect(() => {
@@ -252,12 +284,38 @@ export function GameScreen({
   const pushHistory = () => setHistory((h) => [...h.slice(-50), { grid: g.grid, notes: g.notes }]);
 
   const propose = (index: number, value: number) => {
-    if (!multi || !room || !roomClient || proposal?.status === "waiting") return;
+    if (!multi || !room || !roomClient || proposal?.status === "waiting" || optimisticProposal)
+      return;
+
+    const optimistic: Proposal = {
+      id: `temp-${Date.now()}`,
+      index,
+      value,
+      proposerId: myId,
+      status: "waiting",
+      createdAt: Date.now(),
+      votes: Object.fromEntries(roster.map((p) => [p.id, p.id === myId ? "yes" : "pending"])),
+    };
+    setOptimisticProposal({ index, value });
+    setProposal(optimistic);
+
+    // Fast-path: broadcast optimistic proposal to opponents in ~20ms
+    roomClient.broadcastProposal(optimistic);
+
     void roomClient
       .proposeMove(room.roomId, index, value)
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "Move proposal failed"),
-      );
+      .then((serverSnapshot) => {
+        if (serverSnapshot?.proposal) {
+          setProposal(serverSnapshot.proposal);
+        }
+        setOptimisticProposal(null);
+      })
+      .catch((error) => {
+        setProposal(null);
+        setOptimisticProposal(null);
+        roomClient.broadcastProposalCancel(optimistic.id || "");
+        toast.error(error instanceof Error ? error.message : "Move proposal failed");
+      });
   };
 
   const enter = (n: number) => {
@@ -282,8 +340,10 @@ export function GameScreen({
       return;
     }
     if (g.grid[sel] === n) return;
-    if (multi) propose(sel, n);
-    else {
+    if (multi) {
+      if (proposal?.status === "waiting" || optimisticProposal) return;
+      propose(sel, n);
+    } else {
       pushHistory();
       applyValue(sel, n);
     }
@@ -291,9 +351,25 @@ export function GameScreen({
 
   const vote = (v: "yes" | "no") => {
     if (!multi || !room || !roomClient || !proposal?.id) return;
-    void roomClient
-      .vote(room.roomId, proposal.id, v)
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Vote failed"));
+    const prevProposal = proposal;
+    const updatedProp: Proposal = {
+      ...proposal,
+      votes: {
+        ...proposal.votes,
+        [myId]: v,
+      },
+    };
+    // 1. Optimistic local update (0ms)
+    setProposal(updatedProp);
+
+    // 2. Realtime broadcast to opponents (~20ms)
+    roomClient.broadcastVote(proposal.id, myId, v);
+
+    // 3. Server-side authoritative resolution
+    void roomClient.vote(room.roomId, proposal.id, v).catch((error) => {
+      setProposal(prevProposal);
+      toast.error(error instanceof Error ? error.message : "Vote failed");
+    });
   };
 
   const sendChat = (text: string, retryId?: string) => {
@@ -306,6 +382,7 @@ export function GameScreen({
       at: Date.now(),
       delivery: "sending",
     };
+    seenChatIds.current.add(id);
     setMessages((current) => {
       const withoutRetry = current.filter((message) => message.id !== id);
       return [...withoutRetry, optimistic].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
@@ -357,16 +434,36 @@ export function GameScreen({
     if (!canErase || sel === null) return;
     if (multi) {
       if (!room || !roomClient) return;
-      const request = g.grid[sel]
-        ? roomClient.eraseCell(room.roomId, sel)
-        : roomClient.clearNotes(room.roomId, sel);
+      const targetIndex = sel;
+      const isGridEntry = Boolean(g.grid[targetIndex]);
+      // Optimistic update
+      const previousGrid = g.grid;
+      const previousNotes = g.notes;
+      setG((s) => ({
+        ...s,
+        grid: isGridEntry ? s.grid.map((v, j) => (j === targetIndex ? 0 : v)) : s.grid,
+        notes: s.notes.map((x, j) => (j === targetIndex ? [] : x)),
+      }));
+
+      const request = isGridEntry
+        ? roomClient.eraseCell(room.roomId, targetIndex)
+        : roomClient.clearNotes(room.roomId, targetIndex);
+
       void request
         .then((snapshot) => {
-          if (snapshot.game) setG((s) => ({ ...s, notes: snapshot.game!.notes }));
+          if (snapshot?.game) {
+            setG((s) => ({
+              ...s,
+              grid: snapshot.game!.grid,
+              notes: snapshot.game!.notes,
+            }));
+          }
         })
-        .catch((error) =>
-          toast.error(error instanceof Error ? error.message : "Couldn't erase notes"),
-        );
+        .catch((error) => {
+          // Revert optimistic update on failure
+          setG((s) => ({ ...s, grid: previousGrid, notes: previousNotes }));
+          toast.error(error instanceof Error ? error.message : "Couldn't erase cell");
+        });
       return;
     }
     pushHistory();
@@ -463,8 +560,8 @@ export function GameScreen({
   const stat = "flex flex-col text-sm text-muted-foreground";
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col bg-card sm:my-4 sm:rounded-3xl sm:shadow-soft">
+    <div className="flex h-dvh flex-col bg-background overflow-hidden sm:py-2.5 sm:px-4">
+      <div className="mx-auto flex w-full max-w-lg flex-1 min-h-0 flex-col bg-card sm:rounded-3xl sm:shadow-soft overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <header className="grid grid-cols-[auto_1fr_auto] items-center px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <button onClick={requestLeave} aria-label="Back to home" className={iconBtn}>
             <ChevronLeft className="h-8 w-8" />
@@ -538,14 +635,14 @@ export function GameScreen({
           <div className={cn(stat, "items-end")}>
             <dt>Mistakes</dt>
             <dd className="font-semibold text-foreground/70">
-              {multi ? "—" : settings.showMistakes ? `${g.mistakes}/${MAX_MISTAKES}` : g.mistakes}
+              {settings.showMistakes ? `${g.mistakes ?? 0}/${MAX_MISTAKES}` : (g.mistakes ?? 0)}
             </dd>
           </div>
         </dl>
 
         <div
           className={cn(
-            "mx-auto w-full max-w-[min(100%,calc(100dvh-20rem))] px-1.5",
+            "mx-auto w-full max-w-[min(100%,calc(100dvh-23.5rem))] px-1.5",
             shakeCell !== null && "animate-shake",
           )}
           onAnimationEnd={() => setShakeCell(null)}
@@ -558,38 +655,44 @@ export function GameScreen({
             selected={sel}
             conflicts={conflictSet}
             wrong={wrong}
-            pendingCell={proposal?.status === "waiting" ? proposal : null}
+            pendingCell={proposal?.status === "waiting" ? proposal : optimisticProposal}
             highlightRelated={settings.highlightRelated}
             highlightSame={settings.highlightSame}
             onSelect={setSel}
           />
         </div>
         {multi && notesOn && (
-          <p className="px-4 pt-2 text-center text-xs text-muted-foreground">
+          <p className="px-4 pt-1.5 text-center text-xs text-muted-foreground">
             Shared notes are tentative candidates for discussion — they don't need a vote.
           </p>
         )}
 
-        <div className="mt-auto flex flex-col gap-3 px-2 pb-[max(1rem,env(safe-area-inset-bottom))] pt-5">
+        <div className="mt-auto flex flex-col gap-1.5 sm:gap-2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:pt-2">
           {multi && proposal && (
-            <ProposalPanel
-              proposal={proposal}
-              players={roster}
-              youId={myId}
-              onVote={vote}
-              onDismiss={() => {
-                dismissedProposal.current = proposal.id ?? null;
-                setProposal(null);
-              }}
-              onCancel={() => {
-                if (room && roomClient && proposal.id)
-                  void roomClient
-                    .cancelProposal(room.roomId, proposal.id)
-                    .catch((error) =>
-                      toast.error(error instanceof Error ? error.message : "Cancel failed"),
-                    );
-              }}
-            />
+            <div ref={proposalRef} className="w-full">
+              <ProposalPanel
+                proposal={proposal}
+                players={roster}
+                youId={myId}
+                onVote={vote}
+                onDismiss={() => {
+                  dismissedProposal.current = proposal.id ?? null;
+                  setProposal(null);
+                }}
+                onCancel={() => {
+                  if (room && roomClient && proposal.id) {
+                    roomClient.broadcastProposalCancel(proposal.id);
+                    setProposal(null);
+                    setOptimisticProposal(null);
+                    void roomClient
+                      .cancelProposal(room.roomId, proposal.id)
+                      .catch((error) =>
+                        toast.error(error instanceof Error ? error.message : "Cancel failed"),
+                      );
+                  }
+                }}
+              />
+            </div>
           )}
           {(!multi || !proposal) && (
             <>
@@ -615,18 +718,25 @@ export function GameScreen({
         </div>
       </div>
 
-      {multi && !chatOpen && (
+      {multi && (
         <button
-          onClick={() => setChatOpen(true)}
-          aria-label="Open chat"
+          onClick={() => setChatOpen((v) => !v)}
+          aria-label={chatOpen ? "Close chat" : "Open chat"}
+          data-testid="chat-launcher"
           className={cn(
-            "fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button transition active:scale-90 sm:bottom-6",
+            "fixed right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button transition-all duration-300 active:scale-90",
+            proposal?.status === "waiting"
+              ? "top-20 sm:top-24"
+              : "bottom-[max(1.25rem,env(safe-area-inset-bottom))] sm:bottom-6",
           )}
         >
-          <MessageCircle className="h-6 w-6" />
-          {unread > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-bold">
-              {unread}
+          {chatOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+          {!chatOpen && unread > 0 && (
+            <span
+              data-testid="unread-badge"
+              className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs font-bold text-destructive-foreground shadow-sm"
+            >
+              {unread > 99 ? "99+" : unread}
             </span>
           )}
         </button>

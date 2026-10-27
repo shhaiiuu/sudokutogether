@@ -40,9 +40,13 @@ Deno.serve(async (request) => {
     return json({ ok: true, data });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "The multiplayer server rejected the request.";
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "The multiplayer server rejected the request.";
     const status =
-      /not found|full|only|must|invalid|already|waiting|host|member|proposal|ready|name/i.test(
+      /not found|full|only|must|invalid|already|waiting|host|member|proposal|ready|name|stale|presence|playing|cell|filled|erase|vote/i.test(
         message,
       )
         ? 400
@@ -358,24 +362,47 @@ async function leaveRoom(db: SupabaseClient, userId: string, roomId: string) {
 }
 
 async function snapshot(db: SupabaseClient, userId: string, roomId: string): Promise<unknown> {
-  await requireMember(db, userId, roomId);
-  const synced = await db.rpc("sync_room_proposals", { p_room_id: roomId });
+  const [, synced] = await Promise.all([
+    requireMember(db, userId, roomId),
+    db.rpc("sync_room_proposals", { p_room_id: roomId }),
+  ]);
   if (synced.error) throw synced.error;
-  const room = await getRoom(db, roomId);
-  const members = await db
-    .from("room_members")
-    .select("user_id, name, color, ready, online, last_seen_at")
-    .eq("room_id", roomId)
-    .order("joined_at", { ascending: true });
-  const game = room.status === "waiting" ? null : await getGame(db, roomId);
-  const pending = await db
-    .from("proposals")
-    .select("*")
-    .eq("room_id", roomId)
-    .in("status", ["waiting", "paused", "approved", "rejected", "timeout", "cancelled"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+
+  const [room, membersResult, gameResult, pendingResult, notesResult, chatsResult] =
+    await Promise.all([
+      getRoom(db, roomId),
+      db
+        .from("room_members")
+        .select("user_id, name, color, ready, online, last_seen_at")
+        .eq("room_id", roomId)
+        .order("joined_at", { ascending: true }),
+      db.from("game_states").select("*").eq("room_id", roomId).maybeSingle(),
+      db
+        .from("proposals")
+        .select("*")
+        .eq("room_id", roomId)
+        .in("status", ["waiting", "paused", "approved", "rejected", "timeout", "cancelled"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db.from("room_notes").select("cell_index, values").eq("room_id", roomId),
+      db
+        .from("chat_messages")
+        .select("id, user_id, text, created_at")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: true })
+        .limit(200),
+    ]);
+
+  if (membersResult.error) throw membersResult.error;
+  if (gameResult.error) throw gameResult.error;
+  if (pendingResult.error) throw pendingResult.error;
+  if (notesResult.error) throw notesResult.error;
+  if (chatsResult.error) throw chatsResult.error;
+
+  const members = membersResult;
+  const game = room.status === "waiting" ? null : gameResult.data;
+  const pending = pendingResult;
   const activeProposal =
     pending.data &&
     (pending.data.status === "waiting" ||
@@ -386,13 +413,8 @@ async function snapshot(db: SupabaseClient, userId: string, roomId: string): Pro
   const votes = activeProposal
     ? await db.from("proposal_votes").select("voter_id, vote").eq("proposal_id", activeProposal.id)
     : { data: [] };
-  const notes = await db.from("room_notes").select("cell_index, values").eq("room_id", roomId);
-  const chats = await db
-    .from("chat_messages")
-    .select("id, user_id, text, created_at")
-    .eq("room_id", roomId)
-    .order("created_at", { ascending: true })
-    .limit(200);
+  const notes = notesResult;
+  const chats = chatsResult;
   const playerRows = members.data ?? [];
   const players = playerRows.map((m: Row) => ({
     id: m.user_id,
@@ -443,6 +465,7 @@ async function snapshot(db: SupabaseClient, userId: string, roomId: string): Pro
             : game.elapsed,
         ),
         score: game.score,
+        mistakes: game.mistakes ?? 0,
         completed: room.status === "completed",
         revision: game.revision,
       }

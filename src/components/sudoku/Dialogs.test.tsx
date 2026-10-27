@@ -8,6 +8,9 @@ describe("LeaveGameDialog", () => {
     const onLeave = vi.fn();
     render(<LeaveGameDialog open onStay={onStay} onLeave={onLeave} />);
 
+    const dialog = screen.getByRole("dialog", { name: "Leave this game" });
+    expect(dialog).toHaveClass("items-center");
+
     expect(screen.getByRole("heading", { name: "Leave this game?" })).toBeInTheDocument();
     expect(screen.getByText("Are you sure you want to leave this game?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stay" }));

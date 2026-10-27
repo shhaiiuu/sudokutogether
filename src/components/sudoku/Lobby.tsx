@@ -117,12 +117,12 @@ export function Lobby({
         </button>
         <h1 className="text-center text-xl font-extrabold">
           <span className="text-foreground">Play with </span>
-          <span className="text-primary"> Friends</span> 
+          <span className="text-primary"> Friends</span>
         </h1>
         <span className="w-11" />
       </header>
 
-      <div className="mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex w-full max-w-md min-h-0 flex-1 flex-col gap-3 sm:gap-2.5 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <p className="flex items-start gap-2 rounded-2xl bg-accent px-3 py-2 text-xs text-accent-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0" /> Live rooms use Supabase for membership,
           puzzle state, votes, presence, and chat. Your guest identity is private to this room.
@@ -202,7 +202,7 @@ export function Lobby({
           </>
         ) : (
           <>
-            <section className="rounded-3xl bg-card p-5 shadow-soft">
+            <section className="rounded-3xl bg-card p-4 sm:p-3.5 shadow-soft">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Room code
               </p>
@@ -211,20 +211,20 @@ export function Lobby({
                 <button
                   onClick={() => copy(currentRoom.code, "Room code")}
                   aria-label="Copy room code"
-                  className="rounded-full bg-accent p-3 text-primary"
+                  className="rounded-full bg-accent p-2.5 text-primary"
                 >
                   <Copy className="h-5 w-5" />
                 </button>
               </div>
               <button
                 onClick={() => copy(inviteLink, "Invite link")}
-                className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-muted font-semibold text-primary"
+                className="mt-2.5 flex min-h-10 w-full items-center justify-center gap-2 rounded-full bg-muted text-sm font-semibold text-primary"
               >
                 <Share2 className="h-4 w-4" /> Share invite link
               </button>
             </section>
 
-            <section className="rounded-3xl bg-card p-5 shadow-soft">
+            <section className="rounded-3xl bg-card p-4 sm:p-3.5 shadow-soft">
               <div className="flex items-center justify-between">
                 <h2 className="font-bold">Players</h2>
                 <span className="text-sm text-muted-foreground">
@@ -237,18 +237,18 @@ export function Lobby({
                 ))}
               </ul>
               {currentRoom.players.length < 2 && (
-                <p className="py-2 text-center text-sm text-muted-foreground animate-pulse">
+                <p className="py-1.5 text-center text-sm text-muted-foreground animate-pulse">
                   Waiting for players to join…
                 </p>
               )}
             </section>
 
-            <section className="rounded-3xl bg-card p-5 shadow-soft">
+            <section className="rounded-3xl bg-card p-4 sm:p-3.5 shadow-soft">
               <h2 className="font-bold">Difficulty</h2>
               <p className="text-xs text-muted-foreground">
                 {isHost ? "You're the host — pick the puzzle." : "Chosen by the host"}
               </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
                 {ALL_LEVELS.map(({ level, available, note }) => (
                   <button
                     key={level}
@@ -268,7 +268,7 @@ export function Lobby({
                     aria-pressed={currentRoom.difficulty === level}
                     title={available ? undefined : note}
                     className={cn(
-                      "flex min-h-12 flex-col items-center justify-center rounded-2xl text-sm font-bold transition",
+                      "flex min-h-10 sm:min-h-11 flex-col items-center justify-center rounded-2xl text-xs sm:text-sm font-bold transition",
                       currentRoom.difficulty === level
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-primary",
@@ -290,7 +290,11 @@ export function Lobby({
                     setBusy(true);
                     void client
                       .startGame(currentRoom.roomId)
-                      .then(onRoom)
+                      .then((next) => {
+                        client.broadcastGameStart(next);
+                        onRoom(next);
+                        onStart(next);
+                      })
                       .catch((error) =>
                         toast.error(error instanceof Error ? error.message : "Couldn't start game"),
                       )
@@ -307,15 +311,27 @@ export function Lobby({
                 <SecondaryButton
                   disabled={busy}
                   onClick={() => {
+                    const nextReady = !me?.ready;
+                    if (me) {
+                      const optimisticRoom: RoomSnapshot = {
+                        ...currentRoom,
+                        players: currentRoom.players.map((p) =>
+                          p.id === me.id ? { ...p, ready: nextReady } : p,
+                        ),
+                      };
+                      onRoom(optimisticRoom);
+                    }
+                    client.broadcastReady(currentRoom.roomId, nextReady);
                     setBusy(true);
                     void client
-                      .setReady(currentRoom.roomId, !me?.ready)
+                      .setReady(currentRoom.roomId, nextReady)
                       .then(onRoom)
-                      .catch((error) =>
+                      .catch((error) => {
+                        onRoom(currentRoom);
                         toast.error(
                           error instanceof Error ? error.message : "Couldn't update readiness",
-                        ),
-                      )
+                        );
+                      })
                       .finally(() => setBusy(false));
                   }}
                 >
