@@ -564,120 +564,112 @@ export function GameScreen({
 
   return (
     <div className="flex h-dvh flex-col bg-background overflow-hidden sm:py-2.5 sm:px-4">
-      <div className="mx-auto flex w-full max-w-lg flex-1 min-h-0 flex-col justify-between bg-card sm:rounded-3xl sm:shadow-soft overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex flex-col shrink-0">
-          <header className="grid grid-cols-[auto_1fr_auto] items-center px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
-            <button onClick={requestLeave} aria-label="Back to home" className={iconBtn}>
-              <ChevronLeft className="h-8 w-8" />
+      <div className="mx-auto flex w-full max-w-lg flex-1 min-h-0 flex-col bg-card sm:rounded-3xl sm:shadow-soft overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <header className="grid grid-cols-[auto_1fr_auto] items-center px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <button onClick={requestLeave} aria-label="Back to home" className={iconBtn}>
+            <ChevronLeft className="h-8 w-8" />
+          </button>
+          <p className="text-center text-xl font-extrabold tabular-nums" aria-label="Progress">
+            {filled}/{toFill}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() =>
+                multi ? toast.info("Live rooms restart from a new room.") : setShowDiff(true)
+              }
+              aria-label="New puzzle or restart"
+              className={iconBtn}
+            >
+              <RefreshCw className="h-6 w-6" />
             </button>
-            <p className="text-center text-xl font-extrabold tabular-nums" aria-label="Progress">
-              {filled}/{toFill}
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() =>
-                  multi ? toast.info("Live rooms restart from a new room.") : setShowDiff(true)
-                }
-                aria-label="New puzzle or restart"
-                className={iconBtn}
-              >
-                <RefreshCw className="h-6 w-6" />
-              </button>
-              <button
-                onClick={() => setPaused(true)}
-                aria-label="Pause"
-                className={cn(iconBtn, "rounded-full border-2 border-primary p-1")}
-              >
-                <Pause className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => setShowSettings(true)}
-                aria-label="Settings"
-                className={iconBtn}
-              >
-                <Cog className="h-6 w-6" />
-              </button>
-            </div>
-          </header>
-
-          {multi && (
-            <>
-              <div className="flex items-center justify-between px-4 pt-1">
-                <PlayerBar players={roster} />
-                <span className="rounded-full bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground">
-                  Live room · server synced
-                </span>
-              </div>
-              {connection !== "online" && (
-                <p className="mx-4 mt-2 rounded-full bg-warning/15 px-3 py-1 text-center text-xs font-semibold text-warning">
-                  {connection === "reconnecting"
-                    ? "Reconnecting…"
-                    : "Offline — moves wait for the server"}
-                </p>
-              )}
-            </>
-          )}
-
-          <dl className="grid grid-cols-4 gap-1 px-3 pb-1 pt-2 sm:pt-3">
-            <div className={stat}>
-              <dt>{multi ? "Time" : "All Time"}</dt>
-              <dd className="flex items-center gap-1 font-semibold text-foreground/70">
-                {multi ? (
-                  formatTime(g.elapsed)
-                ) : (
-                  <>
-                    <Trophy className="h-4 w-4" />
-                    {best.toLocaleString()}
-                  </>
-                )}
-              </dd>
-            </div>
-            <div className={cn(stat, "items-center")}>
-              <dt>Difficulty</dt>
-              <dd className="font-semibold text-foreground/70">{g.difficulty}</dd>
-            </div>
-            <div className={cn(stat, "items-center")}>
-              <dt>{multi ? "Score" : formatTime(g.elapsed)}</dt>
-              <dd className="font-semibold text-foreground/70">{g.score.toLocaleString()}</dd>
-            </div>
-            <div className={cn(stat, "items-end")}>
-              <dt>Mistakes</dt>
-              <dd className="font-semibold text-foreground/70">
-                {settings.showMistakes ? `${g.mistakes ?? 0}/${MAX_MISTAKES}` : (g.mistakes ?? 0)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="my-auto flex flex-col items-center justify-center shrink-0 w-full py-1">
-          <div
-            className={cn(
-              "mx-auto w-full max-w-[min(100%,calc(100dvh-15.5rem))] px-2.5 sm:px-4",
-              shakeCell !== null && "animate-shake",
-            )}
-            onAnimationEnd={() => setShakeCell(null)}
-          >
-            <SudokuBoard
-              grid={g.grid}
-              givens={givens}
-              notes={g.notes}
-              selected={sel}
-              conflicts={conflictSet}
-              wrong={wrong}
-              pendingCell={proposal?.status === "waiting" ? proposal : optimisticProposal}
-              highlightRelated={settings.highlightRelated}
-              highlightSame={settings.highlightSame}
-              onSelect={setSel}
-            />
+            <button
+              onClick={() => setPaused(true)}
+              aria-label="Pause"
+              className={cn(iconBtn, "rounded-full border-2 border-primary p-1")}
+            >
+              <Pause className="h-5 w-5" />
+            </button>
+            <button onClick={() => setShowSettings(true)} aria-label="Settings" className={iconBtn}>
+              <Cog className="h-6 w-6" />
+            </button>
           </div>
-          {multi && notesOn && (
-            <p className="px-4 pt-1 text-center text-xs text-muted-foreground">
-              Shared notes are tentative candidates for discussion — they don't need a vote.
-            </p>
-          )}
-        </div>
+        </header>
 
-        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-15.5rem))] px-2.5 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
+        {multi && (
+          <>
+            <div className="flex items-center justify-between px-4 pt-1">
+              <PlayerBar players={roster} />
+              <span className="rounded-full bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground">
+                Live room · server synced
+              </span>
+            </div>
+            {connection !== "online" && (
+              <p className="mx-4 mt-2 rounded-full bg-warning/15 px-3 py-1 text-center text-xs font-semibold text-warning">
+                {connection === "reconnecting"
+                  ? "Reconnecting…"
+                  : "Offline — moves wait for the server"}
+              </p>
+            )}
+          </>
+        )}
+
+        <dl className="grid grid-cols-4 gap-1 px-3 pb-1 pt-2 sm:pt-3">
+          <div className={stat}>
+            <dt>{multi ? "Time" : "All Time"}</dt>
+            <dd className="flex items-center gap-1 font-semibold text-foreground/70">
+              {multi ? (
+                formatTime(g.elapsed)
+              ) : (
+                <>
+                  <Trophy className="h-4 w-4" />
+                  {best.toLocaleString()}
+                </>
+              )}
+            </dd>
+          </div>
+          <div className={cn(stat, "items-center")}>
+            <dt>Difficulty</dt>
+            <dd className="font-semibold text-foreground/70">{g.difficulty}</dd>
+          </div>
+          <div className={cn(stat, "items-center")}>
+            <dt>{multi ? "Score" : formatTime(g.elapsed)}</dt>
+            <dd className="font-semibold text-foreground/70">{g.score.toLocaleString()}</dd>
+          </div>
+          <div className={cn(stat, "items-end")}>
+            <dt>Mistakes</dt>
+            <dd className="font-semibold text-foreground/70">
+              {settings.showMistakes ? `${g.mistakes ?? 0}/${MAX_MISTAKES}` : (g.mistakes ?? 0)}
+            </dd>
+          </div>
+        </dl>
+
+        <div
+          className={cn(
+            "mx-auto w-full max-w-[min(100%,calc(100dvh-15.5rem))] px-2.5 sm:px-4 mt-2 sm:mt-3",
+            shakeCell !== null && "animate-shake",
+          )}
+          onAnimationEnd={() => setShakeCell(null)}
+        >
+          <SudokuBoard
+            grid={g.grid}
+            givens={givens}
+            notes={g.notes}
+            selected={sel}
+            conflicts={conflictSet}
+            wrong={wrong}
+            pendingCell={proposal?.status === "waiting" ? proposal : optimisticProposal}
+            highlightRelated={settings.highlightRelated}
+            highlightSame={settings.highlightSame}
+            onSelect={setSel}
+          />
+        </div>
+        {multi && notesOn && (
+          <p className="px-4 pt-1 text-center text-xs text-muted-foreground">
+            Shared notes are tentative candidates for discussion — they don't need a vote.
+          </p>
+        )}
+
+        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-15.5rem))] px-2.5 sm:px-4 mt-4 sm:mt-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {multi && proposal && (
             <div ref={proposalRef} className="w-full">
               <ProposalPanel
@@ -705,7 +697,7 @@ export function GameScreen({
             </div>
           )}
           {(!multi || !proposal) && (
-            <div className="flex flex-col gap-3 sm:gap-5">
+            <div className="flex flex-col gap-3 sm:gap-4">
               <GameControls
                 notesOn={notesOn}
                 hintsLeft={g.hintsLeft}
