@@ -483,6 +483,7 @@ async function snapshot(db: SupabaseClient, userId: string, roomId: string): Pro
         ),
         score: game.score,
         mistakes: game.mistakes ?? 0,
+        difficulty: game.difficulty ?? room.difficulty,
         completed: room.status === "completed",
         revision: game.revision,
       }

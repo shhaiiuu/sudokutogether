@@ -1,6 +1,11 @@
 -- Migration: 20261028003000_replica_identity_and_rooms_updated_at.sql
 -- Ensure room_members and rooms have full replica identity so CDC DELETE events carry room_id
 -- Add updated_at to rooms so membership and room state changes can reliably trigger room CDC
+-- Add difficulty column to game_states (referenced by start_game_atomic)
+
+alter table public.game_states
+  add column if not exists difficulty text not null default 'Medium'
+  check (difficulty in ('Easy','Medium','Hard','Expert','Master','Extreme'));
 
 alter table public.rooms
   add column if not exists updated_at timestamptz not null default now();
