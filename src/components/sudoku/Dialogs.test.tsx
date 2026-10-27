@@ -9,7 +9,7 @@ describe("LeaveGameDialog", () => {
     render(<LeaveGameDialog open onStay={onStay} onLeave={onLeave} />);
 
     const dialog = screen.getByRole("dialog", { name: "Leave this game" });
-    expect(dialog).toHaveClass("items-center");
+    expect(dialog).toHaveClass("items-end");
 
     expect(screen.getByRole("heading", { name: "Leave this game?" })).toBeInTheDocument();
     expect(screen.getByText("Are you sure you want to leave this game?")).toBeInTheDocument();
