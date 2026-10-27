@@ -135,6 +135,14 @@ export function GameScreen({
     value: number;
   } | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatPos, setChatPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    moved: boolean;
+  } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(room?.messages ?? []);
   const [unread, setUnread] = useState(0);
   const dismissedProposal = useRef<string | null>(null);
@@ -322,20 +330,21 @@ export function GameScreen({
     if (sel === null || givens[sel] || done) return;
     if (notesOn) {
       if (g.grid[sel]) return;
-      if (multi && room && roomClient)
+      pushHistory();
+      setG((s) => ({
+        ...s,
+        notes: s.notes.map((x, j) =>
+          j === sel ? (x.includes(n) ? x.filter((v) => v !== n) : [...x, n].sort()) : x,
+        ),
+      }));
+
+      if (multi && room && roomClient) {
+        roomClient.broadcastNote(sel, n);
         void roomClient
           .toggleNote(room.roomId, sel, n)
           .catch((error) =>
             toast.error(error instanceof Error ? error.message : "Note update failed"),
           );
-      else {
-        pushHistory();
-        setG((s) => ({
-          ...s,
-          notes: s.notes.map((x, j) =>
-            j === sel ? (x.includes(n) ? x.filter((v) => v !== n) : [...x, n].sort()) : x,
-          ),
-        }));
       }
       return;
     }
@@ -650,8 +659,7 @@ export function GameScreen({
           <SudokuBoard
             grid={g.grid}
             givens={givens}
-            notes={multi ? g.notes.map(() => []) : g.notes}
-            sharedNotes={multi ? g.notes : undefined}
+            notes={g.notes}
             selected={sel}
             conflicts={conflictSet}
             wrong={wrong}
@@ -662,12 +670,12 @@ export function GameScreen({
           />
         </div>
         {multi && notesOn && (
-          <p className="px-4 pt-1.5 text-center text-xs text-muted-foreground">
+          <p className="px-4 pt-1 text-center text-xs text-muted-foreground">
             Shared notes are tentative candidates for discussion — they don't need a vote.
           </p>
         )}
 
-        <div className="mt-auto flex flex-col gap-1.5 sm:gap-2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:pt-2">
+        <div className="mt-2 sm:mt-3 flex flex-col gap-1.5 sm:gap-2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-0 sm:pt-1">
           {multi && proposal && (
             <div ref={proposalRef} className="w-full">
               <ProposalPanel
@@ -720,14 +728,74 @@ export function GameScreen({
 
       {multi && (
         <button
-          onClick={() => setChatOpen((v) => !v)}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            dragRef.current = {
+              startX: e.clientX,
+              startY: e.clientY,
+              origX: rect.left,
+              origY: rect.top,
+              moved: false,
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!dragRef.current) return;
+            const dx = e.clientX - dragRef.current.startX;
+            const dy = e.clientY - dragRef.current.startY;
+            if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+              dragRef.current.moved = true;
+              const btnSize = 56;
+              const pad = 8;
+              const nextX = Math.max(
+                pad,
+                Math.min(window.innerWidth - btnSize - pad, dragRef.current.origX + dx),
+              );
+              const nextY = Math.max(
+                pad,
+                Math.min(window.innerHeight - btnSize - pad, dragRef.current.origY + dy),
+              );
+              setChatPos({ x: nextX, y: nextY });
+            }
+          }}
+          onPointerUp={(e) => {
+            if (!dragRef.current) return;
+            try {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+            setTimeout(() => {
+              dragRef.current = null;
+            }, 50);
+          }}
+          onPointerCancel={(e) => {
+            if (!dragRef.current) return;
+            try {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            } catch {
+              /* ignore */
+            }
+            dragRef.current = null;
+          }}
+          onClick={() => {
+            if (dragRef.current?.moved) return;
+            setChatOpen((v) => !v);
+          }}
           aria-label={chatOpen ? "Close chat" : "Open chat"}
           data-testid="chat-launcher"
+          style={chatPos ? { left: `${chatPos.x}px`, top: `${chatPos.y}px` } : undefined}
           className={cn(
-            "fixed right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button transition-all duration-300 active:scale-90",
-            proposal?.status === "waiting"
-              ? "top-20 sm:top-24"
-              : "bottom-[max(1.25rem,env(safe-area-inset-bottom))] sm:bottom-6",
+            "fixed z-50 flex h-14 w-14 select-none touch-none items-center justify-center rounded-full bg-primary text-primary-foreground shadow-button active:scale-95",
+            chatPos
+              ? "transition-none"
+              : cn(
+                  "right-4 transition-all duration-300",
+                  proposal?.status === "waiting"
+                    ? "top-20 sm:top-24"
+                    : "bottom-[max(1.25rem,env(safe-area-inset-bottom))] sm:bottom-6",
+                ),
           )}
         >
           {chatOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}

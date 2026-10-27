@@ -28,6 +28,7 @@ export function ProposalPanel({
   onDismiss: () => void;
   onCancel?: () => void;
 }) {
+  const isMine = proposal.proposerId === youId;
   const proposer = players.find((p) => p.id === proposal.proposerId);
   const myVote = proposal.votes[youId];
   const missing = missingVotes(proposal, players);
@@ -47,7 +48,7 @@ export function ProposalPanel({
             Row {row(proposal.index) + 1}, Column {col(proposal.index) + 1}
           </p>
           <p className="truncate text-sm text-muted-foreground">
-            Proposed by {proposer?.isYou ? "you" : proposer?.name}
+            Proposed by {isMine ? "you" : (proposer?.name ?? "Teammate")}
           </p>
           <span
             className={cn("mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-bold", s.cls)}
@@ -62,7 +63,7 @@ export function ProposalPanel({
           <PlayerRow key={p.id} player={p} vote={proposal.votes[p.id] ?? "pending"} />
         ))}
       </ul>
-      {proposal.status === "waiting" && myVote === "pending" ? (
+      {proposal.status === "waiting" && myVote === "pending" && !isMine ? (
         <div className="mt-3 grid grid-cols-2 gap-3">
           <button
             onClick={() => onVote("no")}
@@ -77,7 +78,7 @@ export function ProposalPanel({
             <Check className="h-5 w-5" /> Yes
           </button>
         </div>
-      ) : proposal.status === "waiting" && proposal.proposerId === youId && onCancel ? (
+      ) : proposal.status === "waiting" && isMine && onCancel ? (
         <button
           onClick={onCancel}
           className="mt-3 min-h-11 w-full rounded-full bg-muted font-semibold text-destructive active:scale-95"

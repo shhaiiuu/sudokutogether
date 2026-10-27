@@ -95,13 +95,23 @@ export class RoomClient {
     return this.command<RoomSnapshot>("cancel", { roomId, proposalId });
   }
   async toggleNote(roomId: string, index: number, value: number) {
-    return this.command<RoomSnapshot>("note", { roomId, index, value });
+    this.broadcastNote(index, value);
+    const snapshot = await this.command<RoomSnapshot>("note", { roomId, index, value });
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async clearNotes(roomId: string, index: number) {
-    return this.command<RoomSnapshot>("clear-notes", { roomId, index });
+    const snapshot = await this.command<RoomSnapshot>("clear-notes", { roomId, index });
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async eraseCell(roomId: string, index: number) {
-    return this.command<RoomSnapshot>("erase", { roomId, index });
+    const snapshot = await this.command<RoomSnapshot>("erase", { roomId, index });
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async sendMessage(roomId: string, text: string) {
     const clean = text.slice(0, 300);
@@ -152,8 +162,9 @@ export class RoomClient {
     this.close();
     this.roomId = roomId;
     this.snapshotListener = (s) => {
-      this.currentSnapshot = s;
-      onSnapshot(s);
+      const localized = localizeSnapshot(s, this.userId);
+      this.currentSnapshot = localized;
+      onSnapshot(localized);
     };
     this.typingListener = onTyping ?? null;
     this.connectionListener = onConnection ?? null;
@@ -297,11 +308,32 @@ export class RoomClient {
           }
         }
       })
+      .on("broadcast", { event: "note-toggled" }, ({ payload }) => {
+        if (payload && payload.from !== this.userId && this.currentSnapshot?.game) {
+          const game = this.currentSnapshot.game;
+          const idx = Number(payload.index);
+          const val = Number(payload.value);
+          const cellNotes = game.notes[idx] ?? [];
+          const nextNotes = cellNotes.includes(val)
+            ? cellNotes.filter((v: number) => v !== val)
+            : [...cellNotes, val].sort((a: number, b: number) => a - b);
+          const updatedGame: RoomGameState = {
+            ...game,
+            notes: game.notes.map((arr, i) => (i === idx ? nextNotes : arr)),
+          };
+          const updated: RoomSnapshot = {
+            ...this.currentSnapshot,
+            game: updatedGame,
+          };
+          this.currentSnapshot = updated;
+          this.snapshotListener?.(updated);
+        }
+      })
       .on("broadcast", { event: "room-snapshot" }, ({ payload }) => {
         // Accept the snapshot broadcast by the *other* player after propose/vote.
         // This eliminates the postgres_changes → HTTP round-trip delay for them.
         if (payload && payload.from !== this.userId && payload.snapshot) {
-          const s = payload.snapshot as RoomSnapshot;
+          const s = localizeSnapshot(payload.snapshot as RoomSnapshot, this.userId);
           this.currentSnapshot = s;
           this.snapshotListener?.(s);
         }
@@ -364,16 +396,33 @@ export class RoomClient {
     });
   }
 
+  broadcastNote(index: number, value: number) {
+    if (!this.channel || !this.userId) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "note-toggled",
+      payload: { index, value, from: this.userId },
+    });
+  }
+
   /** Broadcast the current room snapshot to all channel subscribers instantly.
    *  Used after propose/vote so the other player sees the new state without
    *  waiting for the postgres_changes → scheduleRefresh → HTTP round-trip.
    */
   broadcastSnapshot(snapshot: RoomSnapshot) {
     if (!this.channel || !this.userId) return;
+    // Strip isYou: true before broadcasting so receivers localize it to their own userId.
+    const sanitizedSnapshot: RoomSnapshot = {
+      ...snapshot,
+      players: snapshot.players.map((p) => ({
+        ...p,
+        isYou: false,
+      })),
+    };
     void this.channel.send({
       type: "broadcast",
       event: "room-snapshot",
-      payload: { snapshot, from: this.userId },
+      payload: { snapshot: sanitizedSnapshot, from: this.userId },
     });
   }
 
@@ -381,8 +430,9 @@ export class RoomClient {
    *  Used to update the proposer's own UI immediately after a propose/vote resolves.
    */
   pushSnapshot(snapshot: RoomSnapshot) {
-    this.currentSnapshot = snapshot;
-    this.snapshotListener?.(snapshot);
+    const localized = localizeSnapshot(snapshot, this.userId);
+    this.currentSnapshot = localized;
+    this.snapshotListener?.(localized);
   }
 
   close() {
@@ -492,6 +542,17 @@ export function snapshotGameToUi(snapshot: RoomSnapshot) {
 
 export function normalizeSnapshot(raw: unknown): RoomSnapshot {
   return raw as RoomSnapshot;
+}
+
+export function localizeSnapshot(snapshot: RoomSnapshot, myUserId: string | null): RoomSnapshot {
+  if (!myUserId || !snapshot) return snapshot;
+  return {
+    ...snapshot,
+    players: snapshot.players.map((p) => ({
+      ...p,
+      isYou: p.id === myUserId,
+    })),
+  };
 }
 
 export type { ChatMessage, Player, Proposal, RoomSnapshot, RoomStatus, RoomGameState };

@@ -186,7 +186,7 @@ function App() {
           room={room}
           roomClient={room ? client : undefined}
           players={room?.players}
-          youId={room?.players.find((p) => p.isYou)?.id}
+          youId={client.userId ?? room?.players.find((p) => p.isYou)?.id}
           typing={typing}
           connection={connection}
           best={stats.best}

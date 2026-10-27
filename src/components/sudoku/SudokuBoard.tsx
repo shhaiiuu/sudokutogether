@@ -72,18 +72,16 @@ export function SudokuBoard(p: BoardProps) {
 }
 
 function NoteGrid({ notes, shared }: { notes: number[]; shared?: number[] | undefined }) {
-  if (!notes.length && !shared?.length) return null;
+  const combined = notes.length ? notes : (shared ?? []);
+  if (!combined.length) return null;
   return (
     <span className="grid h-full min-h-0 min-w-0 w-full grid-cols-3 grid-rows-3 overflow-hidden p-[6%] text-[min(2.6vw,0.75rem)] leading-none text-muted-foreground">
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
         <span
           key={n}
-          className={cn(
-            "flex h-full min-h-0 min-w-0 w-full items-center justify-center",
-            shared?.includes(n) && "rounded-sm bg-warning/30 font-bold",
-          )}
+          className="flex h-full min-h-0 min-w-0 w-full items-center justify-center font-normal"
         >
-          {notes.includes(n) || shared?.includes(n) ? n : ""}
+          {combined.includes(n) ? n : ""}
         </span>
       ))}
     </span>
