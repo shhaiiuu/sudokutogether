@@ -43,8 +43,8 @@ export function GridIcon({
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <h1 className={cn("text-2xl font-extrabold tracking-tight text-foreground", className)}>
-      Sudoku<span className="relative top-1 text-primary">Together</span>
+    <h1 className={cn("relative top-3 text-2xl font-extrabold tracking-tight text-foreground", className)}>
+      Sudoku<span className="text-primary">Together</span>
     </h1>
   );
 }
