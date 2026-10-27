@@ -233,6 +233,17 @@ async function propose(
     p_value: value,
   });
   if (inserted.error) throw inserted.error;
+  if (inserted.data) {
+    await db.from("proposal_votes").upsert(
+      {
+        room_id: roomId,
+        proposal_id: inserted.data,
+        voter_id: userId,
+        vote: "yes",
+      },
+      { onConflict: "proposal_id,voter_id" },
+    );
+  }
   return snapshot(db, userId, roomId);
 }
 
@@ -441,7 +452,9 @@ async function snapshot(db: SupabaseClient, userId: string, roomId: string): Pro
         votes: Object.fromEntries(
           (activeProposal.eligible_voter_ids as string[]).map((id) => [
             id,
-            votes.data?.find((v: Row) => v.voter_id === id)?.vote ?? "pending",
+            id === activeProposal.proposer_id
+              ? "yes"
+              : (votes.data?.find((v: Row) => v.voter_id === id)?.vote ?? "pending"),
           ]),
         ),
       }

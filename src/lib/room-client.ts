@@ -268,9 +268,16 @@ export class RoomClient {
       .on("broadcast", { event: "proposal-opened" }, ({ payload }) => {
         if (payload && payload.from !== this.userId && payload.proposal) {
           if (this.currentSnapshot) {
+            const prop = payload.proposal as Proposal;
             const updated: RoomSnapshot = {
               ...this.currentSnapshot,
-              proposal: payload.proposal as Proposal,
+              proposal: {
+                ...prop,
+                votes: {
+                  ...prop.votes,
+                  [prop.proposerId]: "yes",
+                },
+              },
             };
             this.currentSnapshot = updated;
             this.snapshotListener?.(updated);
@@ -371,10 +378,17 @@ export class RoomClient {
 
   broadcastProposal(proposal: Proposal) {
     if (!this.channel || !this.userId) return;
+    const enriched: Proposal = {
+      ...proposal,
+      votes: {
+        ...proposal.votes,
+        [proposal.proposerId]: "yes",
+      },
+    };
     void this.channel.send({
       type: "broadcast",
       event: "proposal-opened",
-      payload: { proposal, from: this.userId },
+      payload: { proposal: enriched, from: this.userId },
     });
   }
 

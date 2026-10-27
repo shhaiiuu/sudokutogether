@@ -27,9 +27,9 @@ const base: Proposal = {
 };
 
 describe("move voting", () => {
-  it("requires the proposer to explicitly vote Yes", () => {
+  it("resolves to approved when all votes are Yes", () => {
     expect(
-      resolveProposal({ ...base, votes: { a: "pending", b: "yes", c: "yes" } }, players, 1),
+      resolveProposal({ ...base, votes: { a: "yes", b: "pending", c: "yes" } }, players, 1),
     ).toBe("waiting");
     expect(resolveProposal({ ...base, votes: { a: "yes", b: "yes", c: "yes" } }, players, 1)).toBe(
       "approved",
