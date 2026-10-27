@@ -6,6 +6,7 @@ import { MAX_PLAYERS, type RoomSnapshot } from "@/lib/room";
 import { normalizePlayerName, playerNameError, RoomClient } from "@/lib/room-client";
 import { PlayerRow } from "./PlayerList";
 import { PrimaryButton, SecondaryButton } from "./Sheet";
+import { LeaveRoomDialog } from "./Dialogs";
 import { cn } from "@/lib/utils";
 
 export function Lobby({
@@ -29,6 +30,7 @@ export function Lobby({
   );
   const [nameError, setNameError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const started = useRef<string | null>(null);
   const stage = room ? "room" : "choose";
   const currentRoom = room!;
@@ -108,7 +110,7 @@ export function Lobby({
     <div className="app-backdrop flex h-dvh flex-col overflow-hidden">
       <header className="grid grid-cols-[auto_1fr_auto] items-center px-3 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
         <button
-          onClick={stage === "room" ? leave : onBack}
+          onClick={stage === "room" ? () => setShowLeaveDialog(true) : onBack}
           aria-label="Back"
           className="rounded-full p-2 text-primary"
           disabled={busy}
@@ -342,6 +344,16 @@ export function Lobby({
           </>
         )}
       </div>
+
+      <LeaveRoomDialog
+        open={showLeaveDialog}
+        leaving={busy}
+        onStay={() => setShowLeaveDialog(false)}
+        onLeave={async () => {
+          setShowLeaveDialog(false);
+          await leave();
+        }}
+      />
     </div>
   );
 }

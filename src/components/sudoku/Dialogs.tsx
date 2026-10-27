@@ -116,6 +116,33 @@ export function LeaveGameDialog({
   );
 }
 
+export function LeaveRoomDialog({
+  open,
+  leaving = false,
+  onStay,
+  onLeave,
+}: {
+  open: boolean;
+  leaving?: boolean;
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <Sheet open={open} {...(leaving ? {} : { onClose: onStay })} label="Leave this room">
+      <div className="flex flex-col gap-3 p-6 text-center">
+        <h2 className="text-2xl font-bold">Leave this room?</h2>
+        <p className="text-muted-foreground">Are you sure you want to leave this room?</p>
+        <PrimaryButton className="mt-3" onClick={onLeave} disabled={leaving}>
+          {leaving ? "Leaving…" : "Leave Room"}
+        </PrimaryButton>
+        <SecondaryButton onClick={onStay} disabled={leaving}>
+          Stay
+        </SecondaryButton>
+      </div>
+    </Sheet>
+  );
+}
+
 export function CompleteDialog({
   open,
   won,

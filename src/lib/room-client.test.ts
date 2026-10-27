@@ -154,4 +154,73 @@ describe("RoomClient realtime broadcast optimizations", () => {
     );
     expect(client.watchingRoomId).toBeNull();
   });
+
+  it("broadcastPlayerLeft and broadcastPlayerJoined emit appropriate broadcast events", () => {
+    const client = new RoomClient();
+    client.userId = "user-1";
+    const send = vi.fn();
+    (client as unknown as { channel: { send: typeof send } }).channel = { send };
+
+    client.broadcastPlayerLeft("room-1", "user-1");
+    expect(send).toHaveBeenCalledWith({
+      type: "broadcast",
+      event: "player-left",
+      payload: { roomId: "room-1", userId: "user-1", from: "user-1" },
+    });
+
+    const mockSnapshot = {
+      roomId: "room-1",
+      players: [{ id: "user-1", isYou: true }],
+    } as unknown as RoomSnapshot;
+
+    client.broadcastPlayerJoined(mockSnapshot);
+    expect(send).toHaveBeenCalledWith({
+      type: "broadcast",
+      event: "room-snapshot",
+      payload: {
+        snapshot: {
+          ...mockSnapshot,
+          players: [{ id: "user-1", isYou: false }],
+        },
+        from: "user-1",
+      },
+    });
+    expect(send).toHaveBeenCalledWith({
+      type: "broadcast",
+      event: "player-joined",
+      payload: { userId: "user-1", from: "user-1" },
+    });
+  });
+
+  it("broadcastGameStart sanitizes isYou to false so receivers localize cleanly", () => {
+    const client = new RoomClient();
+    client.userId = "host-1";
+    const send = vi.fn();
+    (client as unknown as { channel: { send: typeof send } }).channel = { send };
+
+    const mockSnapshot = {
+      roomId: "room-1",
+      status: "playing",
+      players: [
+        { id: "host-1", isYou: true },
+        { id: "guest-1", isYou: false },
+      ],
+    } as unknown as RoomSnapshot;
+
+    client.broadcastGameStart(mockSnapshot);
+    expect(send).toHaveBeenCalledWith({
+      type: "broadcast",
+      event: "game-start",
+      payload: {
+        snapshot: {
+          ...mockSnapshot,
+          players: [
+            { id: "host-1", isYou: false },
+            { id: "guest-1", isYou: false },
+          ],
+        },
+        from: "host-1",
+      },
+    });
+  });
 });

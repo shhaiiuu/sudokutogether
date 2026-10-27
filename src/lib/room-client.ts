@@ -65,6 +65,7 @@ export class RoomClient {
   async leaveRoom() {
     if (!this.roomId || !supabase) return;
     try {
+      if (this.userId) this.broadcastPlayerLeft(this.roomId, this.userId);
       await this.command("leave", { roomId: this.roomId });
     } finally {
       this.close();
@@ -72,13 +73,23 @@ export class RoomClient {
   }
 
   async setReady(roomId: string, ready: boolean) {
-    return this.command<RoomSnapshot>("ready", { roomId, ready });
+    const snapshot = await this.command<RoomSnapshot>("ready", { roomId, ready });
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async setDifficulty(roomId: string, difficulty: Difficulty) {
-    return this.command<RoomSnapshot>("difficulty", { roomId, difficulty });
+    const snapshot = await this.command<RoomSnapshot>("difficulty", { roomId, difficulty });
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async startGame(roomId: string) {
-    return this.command<RoomSnapshot>("start", { roomId });
+    const snapshot = await this.command<RoomSnapshot>("start", { roomId });
+    this.broadcastGameStart(snapshot);
+    this.broadcastSnapshot(snapshot);
+    this.pushSnapshot(snapshot);
+    return snapshot;
   }
   async proposeMove(roomId: string, index: number, value: number) {
     const snapshot = await this.command<RoomSnapshot>("propose", { roomId, index, value });
@@ -149,10 +160,38 @@ export class RoomClient {
 
   broadcastGameStart(snapshot: RoomSnapshot) {
     if (!this.channel) return;
+    const sanitizedSnapshot: RoomSnapshot = {
+      ...snapshot,
+      players: snapshot.players.map((p) => ({
+        ...p,
+        isYou: false,
+      })),
+    };
     void this.channel.send({
       type: "broadcast",
       event: "game-start",
-      payload: { snapshot },
+      payload: { snapshot: sanitizedSnapshot, from: this.userId },
+    });
+  }
+
+  broadcastPlayerJoined(snapshot: RoomSnapshot | null) {
+    if (!this.channel || !this.userId) return;
+    if (snapshot) {
+      this.broadcastSnapshot(snapshot);
+    }
+    void this.channel.send({
+      type: "broadcast",
+      event: "player-joined",
+      payload: { userId: this.userId, from: this.userId },
+    });
+  }
+
+  broadcastPlayerLeft(roomId: string, userId: string) {
+    if (!this.channel) return;
+    void this.channel.send({
+      type: "broadcast",
+      event: "player-left",
+      payload: { roomId, userId, from: this.userId },
     });
   }
 
@@ -274,10 +313,26 @@ export class RoomClient {
       })
       .on("broadcast", { event: "game-start" }, ({ payload }) => {
         if (payload?.snapshot) {
-          const s = payload.snapshot as RoomSnapshot;
+          const s = localizeSnapshot(payload.snapshot as RoomSnapshot, this.userId);
           this.currentSnapshot = s;
           this.snapshotListener?.(s);
         }
+      })
+      .on("broadcast", { event: "player-left" }, ({ payload }) => {
+        if (payload && payload.userId && payload.userId !== this.userId) {
+          if (this.currentSnapshot) {
+            const updated: RoomSnapshot = {
+              ...this.currentSnapshot,
+              players: this.currentSnapshot.players.filter((p) => p.id !== payload.userId),
+            };
+            this.currentSnapshot = updated;
+            this.snapshotListener?.(updated);
+          }
+          refresh();
+        }
+      })
+      .on("broadcast", { event: "player-joined" }, () => {
+        refresh();
       })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if (payload.userId !== this.userId) this.typingListener?.(payload.name || null);
@@ -375,6 +430,7 @@ export class RoomClient {
           await this.channel?.track({ online: true, userId: this.userId, at: Date.now() });
           await this.touch(true);
           await this.refreshSnapshot();
+          this.broadcastPlayerJoined(this.currentSnapshot);
         }
       });
     // Fallback heartbeat to refresh persistent last_seen_at every 15s

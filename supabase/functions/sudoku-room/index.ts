@@ -356,6 +356,7 @@ async function leaveRoom(db: SupabaseClient, userId: string, roomId: string) {
       .eq("room_id", roomId)
       .eq("user_id", userId);
     if (offline.error) throw offline.error;
+    await db.from("rooms").update({ updated_at: new Date().toISOString() }).eq("id", roomId);
     return;
   }
   await db.from("room_members").delete().eq("room_id", roomId).eq("user_id", userId);
@@ -368,8 +369,11 @@ async function leaveRoom(db: SupabaseClient, userId: string, roomId: string) {
     await db.from("rooms").delete().eq("id", roomId);
     return;
   }
-  if (room.host_id === userId)
-    await db.from("rooms").update({ host_id: members.data[0].user_id }).eq("id", roomId);
+  const updateData =
+    room.host_id === userId
+      ? { host_id: members.data[0].user_id, updated_at: new Date().toISOString() }
+      : { updated_at: new Date().toISOString() };
+  await db.from("rooms").update(updateData).eq("id", roomId);
 }
 
 async function snapshot(db: SupabaseClient, userId: string, roomId: string): Promise<unknown> {
