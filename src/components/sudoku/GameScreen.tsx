@@ -651,7 +651,7 @@ export function GameScreen({
 
         <div
           className={cn(
-            "mx-auto w-full max-w-[min(100%,calc(100dvh-23.5rem))] px-1.5",
+            "mx-auto w-full max-w-[min(100%,calc(100dvh-22rem))] px-2.5 sm:px-4",
             shakeCell !== null && "animate-shake",
           )}
           onAnimationEnd={() => setShakeCell(null)}
@@ -675,7 +675,7 @@ export function GameScreen({
           </p>
         )}
 
-        <div className="mt-2 sm:mt-3 flex flex-col gap-1.5 sm:gap-2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-0 sm:pt-1">
+        <div className="mx-auto w-full max-w-[min(100%,calc(100dvh-22rem))] px-2.5 sm:px-4 mt-5 sm:mt-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {multi && proposal && (
             <div ref={proposalRef} className="w-full">
               <ProposalPanel
@@ -703,7 +703,7 @@ export function GameScreen({
             </div>
           )}
           {(!multi || !proposal) && (
-            <>
+            <div className="flex flex-col gap-6 sm:gap-7">
               <GameControls
                 notesOn={notesOn}
                 hintsLeft={g.hintsLeft}
@@ -721,7 +721,7 @@ export function GameScreen({
                 notesOn={notesOn}
                 disabled={!!done || sel === null}
               />
-            </>
+            </div>
           )}
         </div>
       </div>

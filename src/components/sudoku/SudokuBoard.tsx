@@ -22,7 +22,7 @@ export function SudokuBoard(p: BoardProps) {
     <div
       role="grid"
       aria-label="Sudoku board"
-      className="grid aspect-square w-full min-h-0 min-w-0 grid-cols-9 grid-rows-9 border-2 border-grid-strong bg-card select-none"
+      className="grid aspect-square w-full min-h-0 min-w-0 grid-cols-9 grid-rows-9 rounded-2xl overflow-hidden border-2 border-grid-strong bg-card select-none"
     >
       {p.grid.map((v, i) => {
         const r = row(i),
