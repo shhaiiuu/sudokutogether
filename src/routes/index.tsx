@@ -116,7 +116,7 @@ function App() {
             : current,
         );
       void client
-        .watch(next.roomId, setRoom, setTyping, setConnection, onMessage)
+        .watch(next.roomId, setRoom, setTyping, setConnection, onMessage, next)
         .catch((error) => {
           toast.error(error instanceof Error ? error.message : "Couldn't connect to the room");
           setConnection("offline");

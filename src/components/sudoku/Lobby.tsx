@@ -46,6 +46,16 @@ export function Lobby({
     onStart(room);
   }, [onStart, room]);
 
+  useEffect(() => {
+    if (!room || room.status !== "waiting") return;
+    const interval = window.setInterval(() => {
+      void client.refresh().then((snap) => {
+        if (snap) onRoom(snap);
+      });
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [client, onRoom, room?.status, room?.roomId]);
+
   const validatedName = () => {
     const error = playerNameError(name);
     setNameError(error);

@@ -7,6 +7,19 @@ alter table public.game_states
   add column if not exists difficulty text not null default 'Medium'
   check (difficulty in ('Easy','Medium','Hard','Expert','Master','Extreme'));
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'game_states' and policyname = 'game_states_member_read'
+  ) then
+    create policy game_states_member_read on public.game_states
+      for select to authenticated
+      using (is_room_member(room_id));
+  end if;
+end;
+$$;
+
 alter table public.rooms
   add column if not exists updated_at timestamptz not null default now();
 

@@ -201,9 +201,15 @@ export class RoomClient {
     onTyping?: TypingListener,
     onConnection?: ConnectionListener,
     onMessage?: MessageListener,
+    initialSnapshot?: RoomSnapshot | null,
   ) {
     if (!supabase) throw new Error("Supabase is not configured.");
     await this.ensureIdentity();
+
+    if (initialSnapshot) {
+      const localized = localizeSnapshot(initialSnapshot, this.userId);
+      this.currentSnapshot = localized;
+    }
 
     this.snapshotListener = (s) => {
       const localized = localizeSnapshot(s, this.userId);
@@ -427,17 +433,22 @@ export class RoomClient {
               : "reconnecting";
         this.connectionListener?.(connection);
         if (status === "SUBSCRIBED") {
+          if (this.currentSnapshot) {
+            this.broadcastPlayerJoined(this.currentSnapshot);
+          }
           await this.channel?.track({ online: true, userId: this.userId, at: Date.now() });
           await this.touch(true);
-          await this.refreshSnapshot();
-          this.broadcastPlayerJoined(this.currentSnapshot);
+          const fresh = await this.refresh();
+          if (fresh) {
+            this.broadcastPlayerJoined(fresh);
+          }
         }
       });
     // Fallback heartbeat to refresh persistent last_seen_at every 15s
     this.heartbeat = window.setInterval(() => {
       void this.touch(true);
     }, 15000);
-    this.snapshotFallback = window.setInterval(() => void this.refreshSnapshot(), 30000);
+    this.snapshotFallback = window.setInterval(() => void this.refreshSnapshot(), 3000);
 
     const onVisibilityOrFocus = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -581,15 +592,21 @@ export class RoomClient {
     }, 80);
   }
 
-  private async refreshSnapshot() {
-    if (!this.roomId) return;
+  async refresh(): Promise<RoomSnapshot | null> {
+    if (!this.roomId) return null;
     try {
       const snapshot = await this.command<RoomSnapshot>("snapshot", { roomId: this.roomId });
-      this.currentSnapshot = snapshot;
-      this.snapshotListener?.(snapshot);
+      const localized = localizeSnapshot(snapshot, this.userId);
+      this.currentSnapshot = localized;
+      this.snapshotListener?.(localized);
+      return localized;
     } catch {
-      /* connection banner communicates a transient failure */
+      return null;
     }
+  }
+
+  private async refreshSnapshot() {
+    await this.refresh();
   }
 
   private async command<T = unknown>(action: string, payload: Record<string, unknown>) {
